@@ -99,44 +99,81 @@ function lineIcon(line) {
 
 /* ---------- 通信 ---------- */
 
+/** 電波・GAS 側の一時的な不調が原因のエラーに印をつける */
+function tempError(message) {
+  const e = new Error(message);
+  e.temporary = true;
+  return e;
+}
+
 async function readJson(res) {
-  if (!res.ok) throw new Error('サーバーエラー（' + res.status + '）');
+  // GAS は script.googleusercontent.com に転送されるとき、たまに 404 を返す。
+  // 中身が壊れているわけではないので、こういうものは「一時的」として再試行する
+  if (!res.ok) throw tempError('サーバーエラー（' + res.status + '）');
   let data;
   try {
     data = await res.json();
   } catch (e) {
-    throw new Error('サーバーの応答を読み取れませんでした');
+    throw tempError('サーバーの応答を読み取れませんでした');
   }
+  // GAS が ok:false を返したときは、内容の問題なので何度送っても同じ。再試行しない
   if (!data || data.ok !== true) {
     throw new Error((data && data.error) || '処理に失敗しました');
   }
   return data;
 }
 
-/** 起動時の全件読み込み */
-async function apiLoad() {
-  let res;
-  try {
-    res = await fetch(ENDPOINT + '?action=load', { method: 'GET' });
-  } catch (e) {
-    throw new Error('通信できませんでした。電波の状態を確認してください');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 一時的な失敗のときだけ、少し待って送り直す */
+async function withRetry(send, tries) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await send();
+    } catch (err) {
+      last = err;
+      if (!err.temporary || i === tries - 1) throw err;
+      await sleep(400 + i * 900);
+    }
   }
-  return readJson(res);
+  throw last;
 }
+
+/** 起動時の全件読み込み。読むだけなので何度でも送り直してよい */
+async function apiLoad() {
+  return withRetry(async () => {
+    let res;
+    try {
+      res = await fetch(ENDPOINT + '?action=load', { method: 'GET' });
+    } catch (e) {
+      throw tempError('通信できませんでした。電波の状態を確認してください');
+    }
+    return readJson(res);
+  }, 3);
+}
+
+/* 同じ内容を 2 回送っても結果が変わらない操作。ここだけ自動で送り直す。
+   adjustQty（加減算）と addItem（追加）は、送り直すと二重に効いてしまう
+   ことがあるので、失敗したら画面を元に戻してユーザーに押し直してもらう。 */
+const RESENDABLE = { setQty: true, setStatus: true, updateField: true };
 
 /** 書き込み。CORS のプリフライトを避けるため text/plain + JSON 文字列 */
 async function api(payload) {
-  let res;
-  try {
-    res = await fetch(ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-    });
-  } catch (e) {
-    throw new Error('通信できませんでした。電波の状態を確認してください');
-  }
-  return readJson(res);
+  const tries = RESENDABLE[payload && payload.action] ? 3 : 1;
+  return withRetry(async () => {
+    let res;
+    try {
+      res = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      throw tempError('通信できませんでした。電波の状態を確認してください');
+    }
+    return readJson(res);
+  }, tries);
 }
 
 /* ---------- トースト ---------- */
@@ -215,4 +252,14 @@ function flash(el) {
   void el.offsetWidth; // アニメーションをやり直させる
   el.classList.add('saved');
   setTimeout(() => el.classList.remove('saved'), 1300);
+}
+
+/* ---------- ホーム画面に追加できるようにする ---------- */
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {
+      /* 登録できなくてもアプリは普通に動くので、何も知らせない */
+    });
+  });
 }

@@ -154,7 +154,8 @@ function render(force) {
     if (sub && sub.textContent !== subtitle(it)) sub.textContent = subtitle(it);
     card.querySelectorAll('[data-field]').forEach((el) => {
       if (el === document.activeElement) return;
-      if (el.classList.contains('dirty')) return;
+      if (el.classList.contains('dirty')) return; // 入力中
+      if (el.classList.contains('saving')) return; // 保存の順番待ち。まだサーバーに届いていない
       const v = valueOf(it, el.dataset.field);
       if (el.value !== v) el.value = v;
     });
@@ -185,7 +186,18 @@ function markDone(row, field) {
   setTimeout(() => el.classList.remove('done'), 1500);
 }
 
-async function saveField(row, el) {
+/* 保存は 1 件ずつ順番に送る。
+   同じ品目の 2 か所を続けて直したとき、返事の前後が入れ替わって
+   直したはずの値が戻ってしまうのを防ぐため。
+   待っている間も他の入力欄は普通に使える。 */
+let queue = Promise.resolve();
+
+function enqueue(fn) {
+  queue = queue.then(fn, fn);
+  return queue;
+}
+
+function saveField(row, el) {
   const it = getItem(row);
   if (!it) return;
 
@@ -221,22 +233,35 @@ async function saveField(row, el) {
     return;
   }
 
-  const card = cardEl(row);
-  setBusy(card, true);
+  // 直した欄だけを保存中にする。カード全体は止めないので、
+  // 返事を待たずに次の欄へ進める
   el.classList.remove('dirty');
+  el.classList.add('saving');
+  el.disabled = true;
 
-  try {
-    const data = await api({ action: 'updateField', row, field, value });
-    applyData(data);
-    setBusy(cardEl(row), false);
-    markDone(row, field);
-    toast('「' + it.name + '」の' + def.label + 'を保存しました');
-  } catch (err) {
-    setBusy(cardEl(row), false);
-    const back = fieldEl(row, field);
-    if (back) back.value = prev;
-    toast(err.message || '保存できませんでした', { type: 'error', timeout: 7000 });
-  }
+  enqueue(async () => {
+    try {
+      const data = await api({ action: 'updateField', row, field, value });
+      applyData(data);
+      const back = fieldEl(row, field);
+      if (back) {
+        back.disabled = false;
+        back.classList.remove('saving');
+        const saved = getItem(row);
+        if (saved) back.value = valueOf(saved, field); // サーバーが整えた値に合わせる
+      }
+      markDone(row, field);
+      toast('「' + it.name + '」の' + def.label + 'を保存しました');
+    } catch (err) {
+      const back = fieldEl(row, field);
+      if (back) {
+        back.disabled = false;
+        back.classList.remove('saving');
+        back.value = prev;
+      }
+      toast(err.message || '保存できませんでした', { type: 'error', timeout: 7000 });
+    }
+  });
 }
 
 /* ===========================================================
@@ -366,8 +391,7 @@ async function load(showSpinner) {
   if (showSpinner) showLoading();
   try {
     const data = await apiLoad();
-    applyData(data);
-    render(true);
+    applyData(data); // この中で render() まで走る
   } catch (err) {
     if (state.items.length) toast(err.message || '読み込めませんでした', { type: 'error', timeout: 7000 });
     else showLoadError(err.message || '');

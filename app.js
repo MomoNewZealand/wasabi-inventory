@@ -542,8 +542,7 @@ async function load(showSpinner) {
   try {
     const data = await apiLoad();
     lastLoadedAt = Date.now();
-    applyData(data);
-    renderList(true);
+    applyData(data); // この中で renderList() まで走る
   } catch (err) {
     if (state.items.length) {
       toast(err.message || '読み込めませんでした', { type: 'error', timeout: 7000 });

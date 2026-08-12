@@ -631,6 +631,16 @@ body.admin main { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
 .field input.dirty, .field select.dirty { border-color: var(--warn); background: #fff; }
 .field input.done, .field select.done { border-color: var(--green); background: var(--green-l); }
 
+/* 保存の順番待ち・保存中。その欄だけ止まり、他の欄は使える */
+.field input.saving, .field select.saving {
+  border-color: var(--warn);
+  background: var(--warn-l);
+  color: var(--ink-2);
+  opacity: 1;
+  animation: saving-pulse 1.1s ease-in-out infinite;
+}
+@keyframes saving-pulse { 50% { border-color: #eddcb6; } }
+
 .admin-card { position: relative; }
 .admin-card .card-head { margin-bottom: 11px; }
 .admin-card .card-title h3 { font-size: 15.5px; }
