@@ -229,7 +229,7 @@ function metaInner(it) {
 
 function qtyInner(it) {
   const loc = state.loc;
-  const locName = LOC_FULL[loc];
+  const locName = LOC_NAME[loc];
   const cur = num(it[loc]);
   const stepTxt = fmt(stepFor(it));
   const unit = esc(it.qtyUnit || '');
@@ -425,7 +425,7 @@ async function undoStatus(row, to, name) {
 async function doAdjust(it, delta) {
   const cur = num(it[state.loc]);
   if (cur == null && delta < 0) {
-    toast('「' + it.name + '」の' + LOC_FULL[state.loc] + 'の残数がまだ入っていません。数字を直接入れてください', {
+    toast('「' + it.name + '」の' + LOC_NAME[state.loc] + 'の残数がまだ入っていません。数字を直接入れてください', {
       type: 'error',
       timeout: 6500,
     });

@@ -8,14 +8,15 @@
 const ENDPOINT =
   'https://script.google.com/macros/s/AKfycbwaJlUIpU4orf7L5mrt-AcSE8dL-gfjy8lHs2ZOXh2xUK0dINYv7Lsp5TNe3lZiyV3cFw/exec';
 
-/* 拠点 */
+/* 拠点。画面ではどこでも「倉庫 / 牽引 / 自走」の短い呼び方で通す */
 const LOCS = [
-  { key: 'soko', label: '倉庫', full: '倉庫' },
-  { key: 'ken', label: '牽引', full: '牽引の食トラ' },
-  { key: 'jiso', label: '自走', full: '自走の食トラ' },
+  { key: 'soko', label: '倉庫' },
+  { key: 'ken', label: '牽引' },
+  { key: 'jiso', label: '自走' },
 ];
 
-const LOC_FULL = LOCS.reduce((m, l) => ((m[l.key] = l.full), m), {});
+/** soko / ken / jiso から表示名を引く */
+const LOC_NAME = LOCS.reduce((m, l) => ((m[l.key] = l.label), m), {});
 
 /* ステータスの遷移と見た目
    在庫あり →（なくなった）→ 要発注 →（発注した）→ 発注済み →（届いた）→ 在庫あり */
