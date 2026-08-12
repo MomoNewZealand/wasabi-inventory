@@ -425,9 +425,12 @@ async function undoStatus(row, to, name) {
 async function doAdjust(it, delta) {
   const cur = num(it[state.loc]);
   if (cur == null && delta < 0) {
-    toast('「' + it.name + '」の' + LOC_NAME[state.loc] + 'の残数がまだ入っていません。数字を直接入れてください', {
+    // 「—」は倉庫にしか置いていない品目でも普通に出る。
+    // 入れ忘れではなく「場所を間違えている」ほうが多いので、そちらを先に伝える
+    const loc = LOC_NAME[state.loc];
+    toast('「' + it.name + '」は' + loc + 'に置いていないようです。場所を確かめて、' + loc + 'にもあるなら数字を直接入れてください', {
       type: 'error',
-      timeout: 6500,
+      timeout: 7000,
     });
     redrawCard(it.row);
     return;
