@@ -1,0 +1,218 @@
+/* ===========================================================
+   TOKYO WASABI 資材在庫 ― 共通部品
+   index.html / admin.html の両方から読み込む
+   =========================================================== */
+'use strict';
+
+/* Apps Script のウェブアプリ URL（JSON API） */
+const ENDPOINT =
+  'https://script.google.com/macros/s/AKfycbwaJlUIpU4orf7L5mrt-AcSE8dL-gfjy8lHs2ZOXh2xUK0dINYv7Lsp5TNe3lZiyV3cFw/exec';
+
+/* 拠点 */
+const LOCS = [
+  { key: 'soko', label: '倉庫', full: '倉庫' },
+  { key: 'ken', label: '牽引', full: '牽引の食トラ' },
+  { key: 'jiso', label: '自走', full: '自走の食トラ' },
+];
+
+const LOC_FULL = LOCS.reduce((m, l) => ((m[l.key] = l.full), m), {});
+
+/* ステータスの遷移と見た目
+   在庫あり →（なくなった）→ 要発注 →（発注した）→ 発注済み →（届いた）→ 在庫あり */
+const STATUS = {
+  在庫あり: { cls: 'ok', next: '要発注', action: 'なくなった', btn: 'out' },
+  要発注: { cls: 'warn', next: '発注済み', action: '発注した', btn: 'warn' },
+  発注済み: { cls: 'sent', next: '在庫あり', action: '届いた', btn: 'primary' },
+};
+
+/* ---------- 小道具 ---------- */
+
+function esc(v) {
+  return String(v == null ? '' : v).replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+}
+
+/** 空文字・null を null に、それ以外は数値に。数値にできなければ null */
+function num(v) {
+  if (v === '' || v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 表示用。null は「—」、小数は 2 桁まで */
+function fmt(n) {
+  if (n == null) return '—';
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
+}
+
+/** "1 止まる" → "止まる"（先頭の数字を表示時だけ落とす） */
+function lineLabel(line) {
+  const s = String(line == null ? '' : line);
+  return s.replace(/^\s*\d+[.．、\s　]*/, '').trim() || s;
+}
+
+/** 単位に応じて −1 / +1 の刻みを変える（kg・L 系は 0.5 刻み） */
+function stepFor(item) {
+  const u = String((item && item.qtyUnit) || '').trim().toLowerCase();
+  if (/^(kg|ｋｇ|キロ|キログラム|l|ℓ|ｌ|リットル|升)$/.test(u)) return 0.5;
+  return 1;
+}
+
+/* ---------- アイコン（インライン SVG の線画） ---------- */
+
+const ICON_PATHS = {
+  alert: '<path d="M12 3.6 21.2 19.4H2.8L12 3.6Z"/><path d="M12 9.6v4.1"/><path d="M12 16.5h.01"/>',
+  stop: '<path d="M8.1 3h7.8L21 8.1v7.8L15.9 21H8.1L3 15.9V8.1L8.1 3Z"/><path d="M9.3 9.3l5.4 5.4"/>',
+  clock: '<circle cx="12" cy="12" r="8.7"/><path d="M12 6.8v5.4l3.4 2"/>',
+  drop: '<path d="M12 3.2c3.5 4.1 5.6 6.8 5.6 9.6a5.6 5.6 0 1 1-11.2 0c0-2.8 2.1-5.5 5.6-9.6Z"/><path d="M9.4 14.4a2.9 2.9 0 0 0 2.6 2.7"/>',
+  box: '<path d="M12 3 20.4 7.4v9.2L12 21l-8.4-4.4V7.4L12 3Z"/><path d="M3.6 7.4 12 11.8l8.4-4.4"/><path d="M12 11.8V21"/>',
+  clipboard:
+    '<path d="M9.2 4.3H7.4A1.4 1.4 0 0 0 6 5.7v12.9A1.4 1.4 0 0 0 7.4 20h9.2a1.4 1.4 0 0 0 1.4-1.4V5.7a1.4 1.4 0 0 0-1.4-1.4h-1.8"/><rect x="9" y="2.7" width="6" height="3.2" rx="1.1"/><path d="M9.3 12.7l2 2 3.5-3.9"/>',
+  refresh:
+    '<path d="M20.2 12a8.2 8.2 0 1 1-2.4-5.8"/><path d="M20.4 4.4v4.4H16"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  gear: '<circle cx="12" cy="12" r="3.1"/><path d="M12 2.8v2.4M12 18.8v2.4M4.5 4.5l1.7 1.7M17.8 17.8l1.7 1.7M2.8 12h2.4M18.8 12h2.4M4.5 19.5l1.7-1.7M17.8 6.2l1.7-1.7"/>',
+  plus: '<path d="M12 5.5v13M5.5 12h13"/>',
+  back: '<path d="M14.5 5.5 8 12l6.5 6.5"/>',
+};
+
+function icon(name) {
+  const d = ICON_PATHS[name] || ICON_PATHS.box;
+  return (
+    '<svg class="svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+    d +
+    '</svg>'
+  );
+}
+
+/** 分類名からアイコンを推測する（未知の分類は箱アイコン） */
+function lineIcon(line) {
+  const s = String(line || '');
+  if (/止ま|停止|ストップ/.test(s)) return 'stop';
+  if (/手配|時間|納期/.test(s)) return 'clock';
+  if (/衛生|清掃|消毒/.test(s)) return 'drop';
+  return 'box';
+}
+
+/* ---------- 通信 ---------- */
+
+async function readJson(res) {
+  if (!res.ok) throw new Error('サーバーエラー（' + res.status + '）');
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    throw new Error('サーバーの応答を読み取れませんでした');
+  }
+  if (!data || data.ok !== true) {
+    throw new Error((data && data.error) || '処理に失敗しました');
+  }
+  return data;
+}
+
+/** 起動時の全件読み込み */
+async function apiLoad() {
+  let res;
+  try {
+    res = await fetch(ENDPOINT + '?action=load', { method: 'GET' });
+  } catch (e) {
+    throw new Error('通信できませんでした。電波の状態を確認してください');
+  }
+  return readJson(res);
+}
+
+/** 書き込み。CORS のプリフライトを避けるため text/plain + JSON 文字列 */
+async function api(payload) {
+  let res;
+  try {
+    res = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    throw new Error('通信できませんでした。電波の状態を確認してください');
+  }
+  return readJson(res);
+}
+
+/* ---------- トースト ---------- */
+
+let toastRoot = null;
+
+/**
+ * toast('保存しました')
+ * toast('失敗しました', { type: 'error' })
+ * toast('...', { timeout: 15000, action: { label: '元に戻す', onClick } })
+ */
+function toast(message, opts) {
+  opts = opts || {};
+  if (!toastRoot) {
+    toastRoot = document.createElement('div');
+    toastRoot.className = 'toasts';
+    toastRoot.setAttribute('role', 'status');
+    toastRoot.setAttribute('aria-live', 'polite');
+    document.body.appendChild(toastRoot);
+  }
+
+  const el = document.createElement('div');
+  el.className = 'toast' + (opts.type === 'error' ? ' toast-error' : '');
+
+  const text = document.createElement('span');
+  text.className = 'toast-text';
+  text.textContent = message;
+  el.appendChild(text);
+
+  let timer = null;
+  const close = () => {
+    if (timer) clearTimeout(timer);
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 220);
+  };
+
+  if (opts.action) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'toast-action';
+    b.textContent = opts.action.label;
+    b.addEventListener('click', () => {
+      close();
+      opts.action.onClick();
+    });
+    el.appendChild(b);
+  }
+
+  const x = document.createElement('button');
+  x.type = 'button';
+  x.className = 'toast-close';
+  x.setAttribute('aria-label', '閉じる');
+  x.innerHTML = icon('x');
+  x.addEventListener('click', close);
+  el.appendChild(x);
+
+  toastRoot.appendChild(el);
+  timer = setTimeout(close, opts.timeout || 4500);
+  return close;
+}
+
+/* ---------- カードの通信中表示 ---------- */
+
+function setBusy(el, on) {
+  if (!el) return;
+  el.classList.toggle('busy', !!on);
+  el.querySelectorAll('button, input, select').forEach((c) => {
+    c.disabled = !!on;
+  });
+}
+
+/** 保存できたことを緑の枠で一瞬示す */
+function flash(el) {
+  if (!el) return;
+  el.classList.remove('saved');
+  void el.offsetWidth; // アニメーションをやり直させる
+  el.classList.add('saved');
+  setTimeout(() => el.classList.remove('saved'), 1300);
+}

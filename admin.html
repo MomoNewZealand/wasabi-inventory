@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>資材在庫 管理 | TOKYO WASABI</title>
+<meta name="theme-color" content="#2b4430">
+<meta name="format-detection" content="telephone=no">
+<meta name="robots" content="noindex, nofollow">
+
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="admin no-tabbar">
+
+<header class="app-head">
+  <div class="head-top">
+    <a class="back-link" href="index.html" aria-label="スタッフ画面へ戻る">
+      <svg class="svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+      在庫
+    </a>
+    <h1>管理</h1>
+    <button type="button" class="icon-btn" id="reload" aria-label="最新の状態に読み込み直す"></button>
+  </div>
+</header>
+
+<main>
+  <p class="admin-note">
+    この画面はももさん専用です。ここでの変更はスプレッドシートにそのまま反映されます。<br>
+    <b>削除機能はありません。</b>使わなくなった品目は、スプレッドシート側で直接あつかってください。
+  </p>
+
+  <section class="panel" id="add">
+    <span class="card-spin spinner"></span>
+    <h2>品目を追加</h2>
+    <div class="fields">
+      <label class="field wide" for="a-name"><span>品名（必須）</span>
+        <input id="a-name" type="text" placeholder="キッコーゴしょうゆ"></label>
+      <label class="field" for="a-line"><span>分類</span>
+        <select id="a-line"></select></label>
+      <label class="field" for="a-unit"><span>単位</span>
+        <input id="a-unit" type="text" placeholder="個 / 本 / kg"></label>
+      <label class="field" for="a-rp"><span>発注点（空欄可）</span>
+        <input id="a-rp" type="number" step="any" min="0" inputmode="decimal" placeholder="例 5"></label>
+    </div>
+    <button type="button" class="add-btn" id="a-btn">この内容で追加する</button>
+  </section>
+
+  <input class="admin-search" id="search" type="search" placeholder="品名・発注先でしぼり込む"
+         aria-label="品名・発注先でしぼり込む" autocomplete="off">
+
+  <div id="list"></div>
+</main>
+
+<script src="common.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
