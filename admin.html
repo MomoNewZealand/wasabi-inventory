@@ -15,7 +15,14 @@
 <meta name="apple-mobile-web-app-title" content="在庫管理">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
+<!-- Google のサーバーへの接続を先に用意しておく（初回の待ち時間が減る） -->
+<link rel="preconnect" href="https://script.google.com" crossorigin>
+<link rel="preconnect" href="https://script.googleusercontent.com" crossorigin>
+
 <link rel="stylesheet" href="style.css">
+
+<!-- 画面を組み立てるより先に読み込みを始めたいので、common.js だけは <head> に置く -->
+<script src="common.js"></script>
 </head>
 <body class="admin no-tabbar">
 
@@ -59,7 +66,6 @@
   <div id="list"></div>
 </main>
 
-<script src="common.js"></script>
 <script src="admin.js"></script>
 </body>
 </html>

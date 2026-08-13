@@ -277,6 +277,15 @@ function flash(el) {
   setTimeout(() => el.classList.remove('saved'), 1300);
 }
 
+/* ---------- 起動をできるだけ早くする ---------- */
+
+/* GAS の応答に 2 秒前後かかるので、待ち時間を少しでも削るために
+   画面を組み立てるコード（app.js / admin.js）の解析を待たず、
+   このファイルが読み込まれた時点で読み込みを始めてしまう。
+   そのため index.html / admin.html では common.js を <head> に置いている。
+   結果は bootLoad に入れておき、app.js / admin.js が受け取る。 */
+const bootLoad = apiLoad().catch((err) => ({ __error: err }));
+
 /* ---------- ホーム画面に追加できるようにする ---------- */
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {

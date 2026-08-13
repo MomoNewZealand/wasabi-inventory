@@ -389,6 +389,8 @@ function showLoadError(msg) {
   if (b) b.addEventListener('click', () => load(true));
 }
 
+let firstLoad = true;
+
 async function load(showSpinner) {
   if (loading) return;
   loading = true;
@@ -396,7 +398,10 @@ async function load(showSpinner) {
   elReload.disabled = true;
   if (showSpinner) showLoading();
   try {
-    const data = await apiLoad();
+    // 起動時は common.js が先に始めておいた読み込みを受け取る
+    const data = firstLoad ? await bootLoad : await apiLoad();
+    firstLoad = false;
+    if (data && data.__error) throw data.__error;
     applyData(data, true); // 全件読み込みなので丸ごと入れ替える
   } catch (err) {
     if (state.items.length) toast(err.message || '読み込めませんでした', { type: 'error', timeout: 7000 });
