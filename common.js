@@ -236,6 +236,28 @@ function toast(message, opts) {
   return close;
 }
 
+/* ---------- 返ってきた品目を手元のデータに反映する ---------- */
+
+/**
+ * GAS は action によって返す件数が違う。
+ *   updateField … 全件（39件）
+ *   adjustQty / setQty … 変えた 1 件だけ
+ * 丸ごと入れ替えると他の品目が消えてしまうので、行番号で突き合わせて上書きする。
+ * 知らない行番号（品目の追加）は末尾に足したうえで行番号順に並べ直す。
+ */
+function mergeItems(current, incoming) {
+  if (!Array.isArray(incoming) || !incoming.length) return current;
+  const byRow = new Map(current.map((i) => [i.row, i]));
+  let added = false;
+  for (const it of incoming) {
+    if (!byRow.has(it.row)) added = true;
+    byRow.set(it.row, it);
+  }
+  const list = Array.from(byRow.values());
+  if (added) list.sort((a, b) => (a.row || 0) - (b.row || 0));
+  return list;
+}
+
 /* ---------- カードの通信中表示 ---------- */
 
 function setBusy(el, on) {

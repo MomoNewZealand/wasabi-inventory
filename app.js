@@ -364,14 +364,20 @@ function redrawCard(row) {
   sigs.set(row, cardSig(it, r && r.noActions));
 }
 
-/** サーバーからの返事を state に反映する */
-function applyData(data) {
-  if (Array.isArray(data.lines)) {
+/**
+ * サーバーからの返事を state に反映する。
+ * replaceAll を付けるのは全件読み込み（load）のときだけ。
+ * 書き込みの返事は 1 件だけのことがあるので、行番号で突き合わせて上書きする。
+ */
+function applyData(data, replaceAll) {
+  if (Array.isArray(data.lines) && data.lines.length) {
     const changed = JSON.stringify(data.lines) !== JSON.stringify(state.lines);
     state.lines = data.lines;
     if (changed) renderTabs();
   }
-  if (Array.isArray(data.items)) state.items = data.items;
+  if (Array.isArray(data.items)) {
+    state.items = replaceAll ? data.items : mergeItems(state.items, data.items);
+  }
   updateBadge();
   renderList();
 }
@@ -390,10 +396,28 @@ async function run(row, payload, onOk) {
     setBusy(cardEl(row), false);
     flash(cardEl(row));
     if (onOk) onOk();
+    return true;
   } catch (err) {
     setBusy(cardEl(row), false);
     redrawCard(row); // 入力欄をサーバー側の値に戻す
     toast(err.message || '保存できませんでした', { type: 'error', timeout: 7000 });
+    return false;
+  }
+}
+
+/**
+ * グループの品目（しょうゆ3サイズなど）の数を変えると、
+ * 同じグループの他のサイズに出ている「計」も変わる。
+ * 返ってくるのは変えた 1 件だけなので、裏でそっと全件を読み直して揃える。
+ */
+async function refreshGroup(item) {
+  if (!item || !item.group) return;
+  try {
+    const data = await apiLoad();
+    lastLoadedAt = Date.now();
+    applyData(data, true);
+  } catch (err) {
+    /* 失敗しても次の読み込みで揃うので、画面には何も出さない */
   }
 }
 
@@ -440,7 +464,7 @@ async function doAdjust(it, delta) {
     redrawCard(it.row);
     return;
   }
-  await run(it.row, { action: 'adjustQty', row: it.row, loc: state.loc, delta });
+  if (await run(it.row, { action: 'adjustQty', row: it.row, loc: state.loc, delta })) refreshGroup(it);
 }
 
 async function doSetQty(it, input) {
@@ -461,7 +485,7 @@ async function doSetQty(it, input) {
     redrawCard(it.row);
     return;
   }
-  await run(it.row, { action: 'setQty', row: it.row, loc: state.loc, qty: v });
+  if (await run(it.row, { action: 'setQty', row: it.row, loc: state.loc, qty: v })) refreshGroup(it);
 }
 
 /* ===========================================================
@@ -545,7 +569,7 @@ async function load(showSpinner) {
   try {
     const data = await apiLoad();
     lastLoadedAt = Date.now();
-    applyData(data); // この中で renderList() まで走る
+    applyData(data, true); // 全件読み込みなので丸ごと入れ替える
   } catch (err) {
     if (state.items.length) {
       toast(err.message || '読み込めませんでした', { type: 'error', timeout: 7000 });

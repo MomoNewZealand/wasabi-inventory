@@ -13,7 +13,7 @@
    ようにしてあるので、push した新しい版は次に開いたときすぐ反映されます。
    =========================================================== */
 
-const VERSION = 'v1'; // ← 中身を作り直したいときはここの数字を上げる
+const VERSION = 'v2'; // ← 中身を作り直したいときはここの数字を上げる
 const SHELL = 'shell-' + VERSION; // 画面のファイル（毎回ネットを優先）
 const ASSETS = 'assets-' + VERSION; // アイコンなど（めったに変わらない）
 
@@ -29,10 +29,15 @@ const SHELL_FILES = [
 
 const ASSET_FILES = [
   './manifest.webmanifest',
+  './admin.webmanifest',
   './icons/icon-180.png',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
+  './icons/admin-180.png',
+  './icons/admin-192.png',
+  './icons/admin-512.png',
+  './icons/admin-maskable-512.png',
 ];
 
 self.addEventListener('install', (e) => {

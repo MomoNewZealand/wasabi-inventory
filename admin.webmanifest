@@ -1,0 +1,19 @@
+{
+  "name": "資材在庫 管理",
+  "short_name": "在庫管理",
+  "description": "資材在庫の発注点・単位・規格・発注先・分類の編集と、品目の追加。",
+  "lang": "ja",
+  "dir": "ltr",
+  "start_url": "./admin.html",
+  "scope": "./",
+  "id": "./admin.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f6f4",
+  "theme_color": "#2b4430",
+  "icons": [
+    { "src": "icons/admin-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/admin-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/admin-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

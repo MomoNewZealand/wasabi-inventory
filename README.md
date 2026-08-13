@@ -9,6 +9,8 @@ Chrome の Google アカウント切り替えでスタッフが開けなくな�
 - スタッフ用: <https://momonewzealand.github.io/wasabi-inventory/>
 - 管理用（ももさん専用）: <https://momonewzealand.github.io/wasabi-inventory/admin.html>
   - スタッフ用画面からはリンクしていません。URL を直接知っている人だけが開けます。
+  - こちらもホーム画面に追加できます。名前は「在庫管理」、アイコンは
+    **濃い緑の地に琥珀色の葉**（スタッフ用は緑の地に白い葉）で見分けられます。
 
 ---
 
@@ -117,6 +119,17 @@ https://script.google.com/macros/s/AKfycbwaJlUIpU4orf7L5mrt-AcSE8dL-gfjy8lHs2ZOX
 
 `loc` は `soko`（倉庫）/ `ken`（牽引の食トラ）/ `jiso`（自走の食トラ）。
 どれも `{ ok:true, items:[...], lines:[...] }` を返します。失敗時は `{ ok:false, error:'...' }`。
+
+> **注意：`items` に入ってくる件数が action によって違います。**
+> `updateField` は全件（39件）返しますが、**`adjustQty` と `setQty` は変えた 1 件だけ**を返します。
+> そのため画面側では `items` で丸ごと置き換えず、`mergeItems()`（`common.js`）で
+> 行番号を突き合わせて上書きしています。丸ごと置き換えると、数量を更新した瞬間に
+> その 1 件以外が画面から消えます（実際に一度そうなりました）。
+> 全件で置き換えてよいのは `?action=load` の返事だけです。
+>
+> また、グループのある品目（しょうゆ3サイズなど）は 1 件だけ返ってくると
+> 他のサイズに出ている「計」が古いままになるので、書き込みのあとに
+> 裏で全件を読み直しています（`refreshGroup()`）。
 
 **GAS の URL を作り直したときは `common.js` の `ENDPOINT` を書き換えてください。**
 書き換える場所はここ 1 か所だけです。

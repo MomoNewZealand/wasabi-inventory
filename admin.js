@@ -162,9 +162,15 @@ function render(force) {
   }
 }
 
-function applyData(data) {
-  if (Array.isArray(data.lines)) state.lines = data.lines;
-  if (Array.isArray(data.items)) state.items = data.items;
+/**
+ * replaceAll を付けるのは全件読み込み（load）のときだけ。
+ * 書き込みの返事は 1 件だけのことがあるので、行番号で突き合わせて上書きする。
+ */
+function applyData(data, replaceAll) {
+  if (Array.isArray(data.lines) && data.lines.length) state.lines = data.lines;
+  if (Array.isArray(data.items)) {
+    state.items = replaceAll ? data.items : mergeItems(state.items, data.items);
+  }
   syncAddLines();
   render();
 }
@@ -391,7 +397,7 @@ async function load(showSpinner) {
   if (showSpinner) showLoading();
   try {
     const data = await apiLoad();
-    applyData(data); // この中で render() まで走る
+    applyData(data, true); // 全件読み込みなので丸ごと入れ替える
   } catch (err) {
     if (state.items.length) toast(err.message || '読み込めませんでした', { type: 'error', timeout: 7000 });
     else showLoadError(err.message || '');
