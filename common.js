@@ -277,6 +277,50 @@ function flash(el) {
   setTimeout(() => el.classList.remove('saved'), 1300);
 }
 
+/* ---------- 前回の数字を覚えておく ---------- */
+
+/* GAS の応答に 2 秒前後かかり、その間まっ白で待たされるのが長い。
+   そこで前回の数字を端末に残しておき、開いた瞬間に出す。
+   ただし古い数字を見て発注を判断してしまうと事故になるので、
+   最新に入れ替わるまでは画面上部に断りを出し、
+   −1 / +1 / 直接入力 / ステータスのボタンは押せないようにしている。 */
+
+const SNAPSHOT_KEY = 'wasabi-inventory:snapshot:v1';
+const SNAPSHOT_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // これより古ければ使わない
+
+function saveSnapshot(items, lines) {
+  try {
+    localStorage.setItem(
+      SNAPSHOT_KEY,
+      JSON.stringify({ savedAt: Date.now(), items: items, lines: lines })
+    );
+  } catch (e) {
+    /* 保存できない設定の端末でも、アプリは今までどおり動く */
+  }
+}
+
+function readSnapshot() {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s || !Array.isArray(s.items) || !s.items.length) return null;
+    if (!s.savedAt || Date.now() - s.savedAt > SNAPSHOT_MAX_AGE) return null;
+    return s;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** 「8/13 0:09」のような表示に */
+function whenText(ms) {
+  const d = new Date(ms);
+  return d.getMonth() + 1 + '/' + d.getDate() + ' ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+/* 同期で読む。await を挟まないので、画面はすぐ組み立てられる */
+const bootCache = readSnapshot();
+
 /* ---------- 起動をできるだけ早くする ---------- */
 
 /* GAS の応答に 2 秒前後かかるので、待ち時間を少しでも削るために

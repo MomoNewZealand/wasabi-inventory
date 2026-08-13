@@ -4,7 +4,7 @@
    =========================================================== */
 'use strict';
 
-const state = { items: [], lines: [] };
+const state = { items: [], lines: [], stale: false };
 
 let renderedKey = '';
 let loading = false;
@@ -171,6 +171,7 @@ function applyData(data, replaceAll) {
   if (Array.isArray(data.items)) {
     state.items = replaceAll ? data.items : mergeItems(state.items, data.items);
   }
+  saveSnapshot(state.items, state.lines); // 次に開いたときすぐ出せるように残す
   syncAddLines();
   render();
 }
@@ -289,6 +290,7 @@ function syncAddLines() {
 }
 
 async function addItem() {
+  if (state.stale) return;
   const name = addName.value.trim();
   if (!name) {
     toast('品名を入れてください', { type: 'error' });
@@ -348,11 +350,13 @@ async function addItem() {
    =========================================================== */
 
 elList.addEventListener('input', (e) => {
+  if (state.stale) return;
   const el = e.target.closest('[data-field]');
   if (el) el.classList.add('dirty');
 });
 
 elList.addEventListener('change', (e) => {
+  if (state.stale) return; // 前回の値が出ているあいだは保存させない
   const el = e.target.closest('[data-field]');
   if (!el) return;
   const card = el.closest('.card');
@@ -379,6 +383,31 @@ function showLoading() {
   renderedKey = '';
 }
 
+/* ---- 「前回の内容です」の帯 ---- */
+
+const elStaleBar = document.getElementById('stalebar');
+const elStaleMsg = document.getElementById('stalemsg');
+const elStaleSpin = document.getElementById('stalespin');
+const elStaleRetry = document.getElementById('staleretry');
+
+function showStaleBar(message, failed) {
+  elStaleMsg.textContent = message;
+  elStaleSpin.hidden = !!failed;
+  elStaleRetry.hidden = !failed;
+  elStaleBar.hidden = false;
+}
+
+function clearStale() {
+  state.stale = false;
+  document.body.classList.remove('stale');
+  elStaleBar.hidden = true;
+}
+
+elStaleRetry.addEventListener('click', () => {
+  showStaleBar(elStaleMsg.textContent, false);
+  load(false);
+});
+
 function showLoadError(msg) {
   elList.innerHTML =
     '<div class="notice"><span class="big">読み込めませんでした</span>' +
@@ -403,9 +432,19 @@ async function load(showSpinner) {
     firstLoad = false;
     if (data && data.__error) throw data.__error;
     applyData(data, true); // 全件読み込みなので丸ごと入れ替える
+    clearStale();
   } catch (err) {
-    if (state.items.length) toast(err.message || '読み込めませんでした', { type: 'error', timeout: 7000 });
-    else showLoadError(err.message || '');
+    if (state.stale) {
+      showStaleBar(
+        '最新の内容を取れませんでした。いま出ているのは ' +
+          whenText(bootCache.savedAt) + ' 時点の内容です',
+        true
+      );
+    } else if (state.items.length) {
+      toast(err.message || '読み込めませんでした', { type: 'error', timeout: 7000 });
+    } else {
+      showLoadError(err.message || '');
+    }
   } finally {
     loading = false;
     elReload.classList.remove('spin');
@@ -415,4 +454,18 @@ async function load(showSpinner) {
 
 /* 起動 */
 elReload.innerHTML = icon('refresh');
-load(true);
+
+if (bootCache) {
+  // 前回の内容をすぐ出す。最新に入れ替わるまでは断りを出し、編集させない
+  state.items = bootCache.items;
+  state.lines = bootCache.lines || [];
+  state.stale = true;
+  document.body.classList.add('stale');
+  syncAddLines();
+  render(true);
+  showStaleBar(
+    '最新の内容を取っています… いま出ているのは ' + whenText(bootCache.savedAt) + ' 時点の内容です'
+  );
+}
+
+load(!bootCache); // 前回の内容が出ているなら「読み込み中…」は出さない

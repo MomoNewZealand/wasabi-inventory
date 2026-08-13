@@ -8,6 +8,7 @@ const state = {
   lines: [],
   tab: 'reorder',
   loc: 'soko',
+  stale: false, // 前回の数字を出していて、まだ最新に入れ替わっていない
 };
 
 let renderedKey = ''; // いま画面に並んでいるカードの並び順（変わったときだけ組み直す）
@@ -378,6 +379,7 @@ function applyData(data, replaceAll) {
   if (Array.isArray(data.items)) {
     state.items = replaceAll ? data.items : mergeItems(state.items, data.items);
   }
+  saveSnapshot(state.items, state.lines); // 次に開いたときすぐ出せるように残す
   updateBadge();
   renderList();
 }
@@ -503,6 +505,7 @@ elLocBar.addEventListener('click', (e) => {
 });
 
 elList.addEventListener('click', (e) => {
+  if (state.stale) return; // 前回の数字が出ているあいだは触らせない
   const b = e.target.closest('button[data-act]');
   if (!b) return;
   const card = b.closest('.card');
@@ -516,6 +519,7 @@ elList.addEventListener('click', (e) => {
 });
 
 elList.addEventListener('change', (e) => {
+  if (state.stale) return; // 前回の数字が出ているあいだは触らせない
   const input = e.target.closest('input.qty-input');
   if (!input) return;
   const card = input.closest('.card');
@@ -550,6 +554,31 @@ function showLoading() {
   renderedKey = '';
 }
 
+/* ---- 「前回の数字です」の帯 ---- */
+
+const elStaleBar = document.getElementById('stalebar');
+const elStaleMsg = document.getElementById('stalemsg');
+const elStaleSpin = document.getElementById('stalespin');
+const elStaleRetry = document.getElementById('staleretry');
+
+function showStaleBar(message, failed) {
+  elStaleMsg.textContent = message;
+  elStaleSpin.hidden = !!failed;
+  elStaleRetry.hidden = !failed;
+  elStaleBar.hidden = false;
+}
+
+function clearStale() {
+  state.stale = false;
+  document.body.classList.remove('stale');
+  elStaleBar.hidden = true;
+}
+
+elStaleRetry.addEventListener('click', () => {
+  showStaleBar(elStaleMsg.textContent, false);
+  load(false);
+});
+
 function showLoadError(msg) {
   elList.innerHTML =
     '<div class="notice"><span class="big">読み込めませんでした</span>' +
@@ -575,8 +604,16 @@ async function load(showSpinner) {
     if (data && data.__error) throw data.__error;
     lastLoadedAt = Date.now();
     applyData(data, true); // 全件読み込みなので丸ごと入れ替える
+    clearStale();
   } catch (err) {
-    if (state.items.length) {
+    if (state.stale) {
+      // 前回の数字を出したまま。触らせない状態は続ける
+      showStaleBar(
+        '最新の数字を取れませんでした。いま出ているのは ' +
+          whenText(bootCache.savedAt) + ' 時点の数字です',
+        true
+      );
+    } else if (state.items.length) {
       toast(err.message || '読み込めませんでした', { type: 'error', timeout: 7000 });
     } else {
       showLoadError(err.message || '');
@@ -592,4 +629,18 @@ async function load(showSpinner) {
 elReload.innerHTML = icon('refresh');
 renderLocBar();
 renderTabs();
-load(true);
+
+if (bootCache) {
+  // 前回の数字をすぐ出す。最新に入れ替わるまでは断りを出し、数は触らせない
+  state.items = bootCache.items;
+  state.lines = bootCache.lines || [];
+  state.stale = true;
+  document.body.classList.add('stale');
+  renderTabs();
+  renderList(true);
+  showStaleBar(
+    '最新の数字を取っています… いま出ているのは ' + whenText(bootCache.savedAt) + ' 時点の数字です'
+  );
+}
+
+load(!bootCache); // 前回の数字が出ているなら「読み込み中…」は出さない

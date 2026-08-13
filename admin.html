@@ -36,6 +36,14 @@
     <h1>管理</h1>
     <button type="button" class="icon-btn" id="reload" aria-label="最新の状態に読み込み直す"></button>
   </div>
+
+  <div class="stale-bar" id="stalebar" hidden>
+    <div class="stale-inner">
+      <span class="spinner" id="stalespin"></span>
+      <span id="stalemsg"></span>
+      <button type="button" id="staleretry" hidden>再読み込み</button>
+    </div>
+  </div>
 </header>
 
 <main>
