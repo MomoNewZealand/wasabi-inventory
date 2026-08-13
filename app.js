@@ -70,8 +70,14 @@ function selectTab(id) {
   elTabbar.querySelectorAll('.tab').forEach((b) => {
     b.setAttribute('aria-selected', String(b.dataset.tab === id));
   });
+  syncLocBar();
   renderList(true);
   window.scrollTo({ top: 0 });
+}
+
+/** 要発注タブは拠点ごとの操作がないので、場所の切り替えは隠す */
+function syncLocBar() {
+  elLocBar.hidden = state.tab === 'reorder';
 }
 
 /* ===========================================================
@@ -127,11 +133,11 @@ function buildRows() {
     }
     if (need.length) {
       out.push({ type: 'section', label: '発注してください', count: need.length });
-      need.forEach((i) => out.push({ type: 'card', item: i }));
+      need.forEach((i) => out.push({ type: 'card', item: i, mode: 'reorder' }));
     }
     if (sent.length) {
       out.push({ type: 'section', label: '発注済み・入荷待ち', count: sent.length });
-      sent.forEach((i) => out.push({ type: 'card', item: i }));
+      sent.forEach((i) => out.push({ type: 'card', item: i, mode: 'reorder' }));
     }
     return out;
   }
@@ -148,7 +154,7 @@ function buildRows() {
         cur = i.line;
         out.push({ type: 'section', label: lineLabel(cur) });
       }
-      out.push({ type: 'card', item: i, noActions: true });
+      out.push({ type: 'card', item: i, mode: 'stock' });
     }
     return out;
   }
@@ -160,7 +166,7 @@ function buildRows() {
     out.push({ type: 'empty', title: 'この分類の品目はありません', text: '' });
     return out;
   }
-  list.forEach((i) => out.push({ type: 'card', item: i }));
+  list.forEach((i) => out.push({ type: 'card', item: i, mode: 'line' }));
   return out;
 }
 
@@ -168,14 +174,14 @@ function buildRows() {
    カード
    =========================================================== */
 
-function cardSig(it, noActions) {
+function cardSig(it, mode) {
   return JSON.stringify([
     it.name, it.line, it.status, it.supplier,
     it.soko, it.ken, it.jiso, it.total,
-    it.qtyUnit, it.spec, it.specUnit, it.managed, it.rp,
+    it.qtyUnit, it.spec, it.specUnit, it.managed, it.rp, it.lot,
     it.servings, it.group, it.gTotal, it.gRp,
     it.qtyUpdated, it.updated,
-    !!noActions,
+    mode,
   ]);
 }
 
@@ -214,21 +220,40 @@ function headInner(it) {
   return h;
 }
 
-function metaInner(it) {
+/**
+ * タブによって出す情報を変える。
+ *   reorder … 発注の判断に要るものだけ（残 / 発注点 / 発注先）
+ *   line    … 出さない（数の増減に集中させる）
+ *   stock   … 従来どおり（発注先 / 発注点 / 更新）
+ */
+function metaInner(it, mode) {
+  if (mode === 'line') return '';
   const bits = [];
-  if (it.supplier) bits.push('<span><b>発注先</b> ' + esc(it.supplier) + '</span>');
   const rp = num(it.rp);
+  const unit = esc(it.qtyUnit || '');
+
+  if (mode === 'reorder' && it.managed) {
+    bits.push('<span class="m-total"><b>残</b> ' + fmt(num(it.total)) + unit + '</span>');
+  }
+  if (mode === 'stock' && it.supplier) {
+    bits.push('<span><b>発注先</b> ' + esc(it.supplier) + '</span>');
+  }
   // グループのある品目は発注点をグループ側（規格の単位）で見ているので、
   // 品目ごとの発注点は出さない（上のグループ行に「発注点1800ml」と出る）
   if (it.managed && !it.group && rp != null) {
-    bits.push('<span><b>発注点</b> ' + fmt(rp) + esc(it.qtyUnit || '') + '</span>');
+    bits.push('<span><b>発注点</b> ' + fmt(rp) + unit + '</span>');
   }
-  const upd = it.qtyUpdated || it.updated;
-  if (upd) bits.push('<span><b>更新</b> ' + esc(upd) + '</span>');
+  if (mode === 'reorder' && it.supplier) {
+    bits.push('<span><b>発注先</b> ' + esc(it.supplier) + '</span>');
+  }
+  if (mode === 'stock') {
+    const upd = it.qtyUpdated || it.updated;
+    if (upd) bits.push('<span><b>更新</b> ' + esc(upd) + '</span>');
+  }
   return bits.length ? '<div class="meta">' + bits.join('') + '</div>' : '';
 }
 
-function qtyInner(it) {
+function qtyInner(it, mode) {
   const loc = state.loc;
   const locName = LOC_NAME[loc];
   const cur = num(it[loc]);
@@ -251,10 +276,13 @@ function qtyInner(it) {
     '<button type="button" class="step inc" data-act="inc" aria-label="' +
     esc(locName + 'の残数を' + stepTxt + '増やす') + '">+' + stepTxt + '</button>';
   h += '</div><div class="breakdown">';
-  for (const l of LOCS) {
-    h +=
-      '<span class="bd' + (l.key === loc ? ' on' : '') + '"><b>' + esc(l.label) + '</b>' +
-      fmt(num(it[l.key])) + '</span>';
+  // 3拠点の内訳を出すのは棚卸しタブだけ。分類タブは合計だけでよい
+  if (mode === 'stock') {
+    for (const l of LOCS) {
+      h +=
+        '<span class="bd' + (l.key === loc ? ' on' : '') + '"><b>' + esc(l.label) + '</b>' +
+        fmt(num(it[l.key])) + '</span>';
+    }
   }
   // グループのある品目の残り少なさはグループ行のほうで示すので、ここでは色を付けない
   const low = !it.group && rp != null && total != null && total <= rp;
@@ -263,32 +291,37 @@ function qtyInner(it) {
   return h;
 }
 
-function actionsInner(it, noActions) {
-  if (noActions) return '';
+function actionsInner(it, mode) {
+  if (mode === 'stock') return ''; // 棚卸しは数を数えるだけ
   const st = STATUS[it.status];
   if (!st) return '';
-  // 数量で管理していて在庫がある品目は、−1/+1 で回すのでボタンは出さない
-  if (it.managed && it.status === '在庫あり') return '';
+  // 分類タブでは、数量管理していて在庫がある品目は −1/+1 で回すのでボタンを出さない
+  if (mode === 'line' && it.managed && it.status === '在庫あり') return '';
   return (
     '<div class="actions"><button type="button" class="btn ' + st.btn +
     '" data-act="status">' + esc(st.action) + '</button></div>'
   );
 }
 
-function cardInner(it, noActions) {
+function cardInner(it, mode) {
   let h = '<span class="card-spin spinner"></span>';
   h += headInner(it);
-  h += metaInner(it);
-  if (it.managed) h += qtyInner(it);
-  h += actionsInner(it, noActions);
+  h += metaInner(it, mode);
+  // 要発注タブは残数を meta に出すので、増減の操作欄は出さない
+  if (it.managed && mode !== 'reorder') h += qtyInner(it, mode);
+  h += actionsInner(it, mode);
   return h;
+}
+
+function cardClass(mode) {
+  return 'card mode-' + (mode || 'line');
 }
 
 function makeCard(r) {
   const el = document.createElement('article');
-  el.className = 'card';
+  el.className = cardClass(r.mode);
   el.dataset.row = String(r.item.row);
-  el.innerHTML = cardInner(r.item, r.noActions);
+  el.innerHTML = cardInner(r.item, r.mode);
   return el;
 }
 
@@ -310,7 +343,7 @@ function renderList(force) {
     state.tab + '|' + state.loc + '|' +
     rows
       .map((r) =>
-        r.type === 'card' ? 'c' + r.item.row + (r.noActions ? '!' : '') :
+        r.type === 'card' ? 'c' + r.item.row + ':' + r.mode :
         r.type === 'section' ? 's' + r.label : 'e'
       )
       .join(',');
@@ -332,7 +365,7 @@ function renderList(force) {
         frag.appendChild(d);
       } else {
         frag.appendChild(makeCard(r));
-        sigs.set(r.item.row, cardSig(r.item, r.noActions));
+        sigs.set(r.item.row, cardSig(r.item, r.mode));
       }
     }
     elList.replaceChildren(frag);
@@ -343,12 +376,12 @@ function renderList(force) {
   // 並びは同じ。中身が変わったカードだけ描き直す
   for (const r of rows) {
     if (r.type !== 'card') continue;
-    const s = cardSig(r.item, r.noActions);
+    const s = cardSig(r.item, r.mode);
     if (sigs.get(r.item.row) === s) continue;
     const el = cardEl(r.item.row);
     if (el) {
-      el.className = 'card';
-      el.innerHTML = cardInner(r.item, r.noActions);
+      el.className = cardClass(r.mode);
+      el.innerHTML = cardInner(r.item, r.mode);
     }
     sigs.set(r.item.row, s);
   }
@@ -360,9 +393,10 @@ function redrawCard(row) {
   const el = cardEl(row);
   if (!it || !el) return;
   const r = buildRows().find((x) => x.type === 'card' && x.item.row === row);
-  el.className = 'card';
-  el.innerHTML = cardInner(it, r && r.noActions);
-  sigs.set(row, cardSig(it, r && r.noActions));
+  const mode = r ? r.mode : 'line';
+  el.className = cardClass(mode);
+  el.innerHTML = cardInner(it, mode);
+  sigs.set(row, cardSig(it, mode));
 }
 
 /**
@@ -629,6 +663,7 @@ async function load(showSpinner) {
 elReload.innerHTML = icon('refresh');
 renderLocBar();
 renderTabs();
+syncLocBar();
 
 if (bootCache) {
   // 前回の数字をすぐ出す。最新に入れ替わるまでは断りを出し、数は触らせない

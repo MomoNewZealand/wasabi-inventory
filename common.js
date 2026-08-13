@@ -54,8 +54,15 @@ function lineLabel(line) {
   return s.replace(/^\s*\d+[.．、\s　]*/, '').trim() || s;
 }
 
-/** 単位に応じて −1 / +1 の刻みを変える（kg・L 系は 0.5 刻み） */
+/**
+ * −1 / +1 の刻みを決める。
+ * 1. lot に値があればそれを使う（袋やケース単位でしか動かない容器類）
+ * 2. なければ kg・L 系は 0.5 刻み
+ * 3. それ以外は 1
+ */
 function stepFor(item) {
+  const lot = num(item && item.lot);
+  if (lot != null && lot > 0) return lot;
   const u = String((item && item.qtyUnit) || '').trim().toLowerCase();
   if (/^(kg|ｋｇ|キロ|キログラム|l|ℓ|ｌ|リットル|升)$/.test(u)) return 0.5;
   return 1;
@@ -69,6 +76,7 @@ const ICON_PATHS = {
   clock: '<circle cx="12" cy="12" r="8.7"/><path d="M12 6.8v5.4l3.4 2"/>',
   drop: '<path d="M12 3.2c3.5 4.1 5.6 6.8 5.6 9.6a5.6 5.6 0 1 1-11.2 0c0-2.8 2.1-5.5 5.6-9.6Z"/><path d="M9.4 14.4a2.9 2.9 0 0 0 2.6 2.7"/>',
   box: '<path d="M12 3 20.4 7.4v9.2L12 21l-8.4-4.4V7.4L12 3Z"/><path d="M3.6 7.4 12 11.8l8.4-4.4"/><path d="M12 11.8V21"/>',
+  bowl: '<path d="M3.4 10.9h17.2c0 4.4-3.5 7.9-7.8 7.9h-1.6c-4.3 0-7.8-3.5-7.8-7.9Z"/><path d="M4.4 20.6h15.2"/><path d="M9.7 7.9c.9-.9.9-2 0-2.9"/><path d="M14.3 7.9c.9-.9.9-2 0-2.9"/>',
   clipboard:
     '<path d="M9.2 4.3H7.4A1.4 1.4 0 0 0 6 5.7v12.9A1.4 1.4 0 0 0 7.4 20h9.2a1.4 1.4 0 0 0 1.4-1.4V5.7a1.4 1.4 0 0 0-1.4-1.4h-1.8"/><rect x="9" y="2.7" width="6" height="3.2" rx="1.1"/><path d="M9.3 12.7l2 2 3.5-3.9"/>',
   refresh:
@@ -92,9 +100,12 @@ function icon(name) {
 /** 分類名からアイコンを推測する（未知の分類は箱アイコン） */
 function lineIcon(line) {
   const s = String(line || '');
+  if (/容器|包装|資材/.test(s)) return 'box';
+  if (/食材|食品|材料/.test(s)) return 'bowl';
+  if (/衛生|清掃|消毒/.test(s)) return 'drop';
+  // 以前の分類名（スプレッドシートを戻したときのため）
   if (/止ま|停止|ストップ/.test(s)) return 'stop';
   if (/手配|時間|納期/.test(s)) return 'clock';
-  if (/衛生|清掃|消毒/.test(s)) return 'drop';
   return 'box';
 }
 

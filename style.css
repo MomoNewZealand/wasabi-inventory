@@ -117,6 +117,8 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
   padding-bottom: 10px;
 }
 
+.loc-bar[hidden] { display: none; }
+
 .loc-bar .loc-label {
   font-size: 12px;
   color: rgba(255, 255, 255, .75);
@@ -342,6 +344,27 @@ main {
   gap: 4px 10px;
 }
 .meta b { font-weight: 600; color: var(--ink-2); }
+
+/* 要発注タブの「残」は判断の軸になるので目立たせる */
+.m-total { color: var(--ink); font-weight: 700; font-size: 13px; }
+.m-total b { color: var(--ink-3); font-weight: 600; }
+
+/* ---- タブごとの詰め方 ---- */
+
+/* 要発注タブ: 1画面に3〜4件が見えるように詰める */
+.card.mode-reorder {
+  padding: 11px 13px;
+  margin-bottom: 8px;
+}
+.card.mode-reorder .meta { margin-top: 5px; row-gap: 2px; }
+.card.mode-reorder .actions { margin-top: 9px; }
+.card.mode-reorder .btn { min-height: 42px; font-size: 14.5px; }
+
+/* 分類タブ: 内訳を出さないぶん、数量欄まわりを詰める */
+.card.mode-line { margin-bottom: 8px; }
+.card.mode-line .qty { margin-top: 9px; padding-top: 9px; }
+.card.mode-line .breakdown { margin-top: 7px; }
+.card.mode-line .actions { margin-top: 9px; }
 
 /* ステータスチップ */
 .chip {
