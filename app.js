@@ -283,6 +283,10 @@ function qtyInner(it, mode) {
         '<span class="bd' + (l.key === loc ? ' on' : '') + '"><b>' + esc(l.label) + '</b>' +
         fmt(num(it[l.key])) + '</span>';
     }
+  } else if (mode === 'line' && !it.group && rp != null) {
+    // 発注点は「計」と同じ行に置く。行が増えないので縦幅は変わらない。
+    // グループのある品目は発注点をグループ側（規格の単位）で見ているので出さない
+    h += '<span class="bd"><b>発注点</b>' + fmt(rp) + unit + '</span>';
   }
   // グループのある品目の残り少なさはグループ行のほうで示すので、ここでは色を付けない
   const low = !it.group && rp != null && total != null && total <= rp;
