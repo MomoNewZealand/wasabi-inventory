@@ -13,7 +13,7 @@
    ようにしてあるので、push した新しい版は次に開いたときすぐ反映されます。
    =========================================================== */
 
-const VERSION = 'v2'; // ← 中身を作り直したいときはここの数字を上げる
+const VERSION = 'v3'; // ← 中身を作り直したいときはここの数字を上げる
 const SHELL = 'shell-' + VERSION; // 画面のファイル（毎回ネットを優先）
 const ASSETS = 'assets-' + VERSION; // アイコンなど（めったに変わらない）
 
@@ -87,11 +87,18 @@ async function cacheFirst(req) {
   return res;
 }
 
-/** 画面のファイル: まずネット。つながらないときだけ手元の控えを使う */
+/** 画面のファイル: まずネット。つながらないときだけ手元の控えを使う
+ *
+ *  cache:'no-cache' が要。GitHub Pages は「10分間はそのまま使ってよい」と
+ *  指示を出してくるので、普通に fetch するとブラウザが持っている古いファイルが
+ *  返ってきて、push した修正が最大10分間反映されない。
+ *  no-cache にすると毎回サーバーに確認しに行き、変わっていなければ 304 が返るだけ
+ *  なので通信量はほとんど増えない。
+ */
 async function networkFirst(req) {
   const cache = await caches.open(SHELL);
   try {
-    const res = await fetch(req);
+    const res = await fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' });
     if (res && res.ok) cache.put(req, res.clone());
     return res;
   } catch (err) {
