@@ -288,6 +288,45 @@ function flash(el) {
   setTimeout(() => el.classList.remove('saved'), 1300);
 }
 
+/* ---------- 何かで落ちたときに、原因を画面に出す ---------- */
+
+/* 端末によっては、こちらで再現できない理由で止まることがある
+   （古い Safari に無い書き方を使っていた、など）。
+   そのとき画面が真っ白になると「エラーになった」以上のことが分からないので、
+   赤い帯で中身を出し、撮って送ってもらえるようにしておく。 */
+
+function showFatal(message, where) {
+  try {
+    const put = function () {
+      if (document.getElementById('fatal')) return; // 最初の1件だけ出す
+      const d = document.createElement('div');
+      d.id = 'fatal';
+      d.className = 'fatal';
+      const t = document.createElement('b');
+      t.textContent = 'アプリでエラーが起きました';
+      const p = document.createElement('p');
+      p.textContent = 'この画面を撮って Momo に送ってください。';
+      const c = document.createElement('code');
+      c.textContent = String(message || '不明なエラー') + (where ? '\n' + where : '');
+      d.appendChild(t);
+      d.appendChild(p);
+      d.appendChild(c);
+      document.body.appendChild(d);
+    };
+    if (document.body) put();
+    else document.addEventListener('DOMContentLoaded', put);
+  } catch (e) {
+    /* ここで失敗したら打つ手がない */
+  }
+}
+
+window.addEventListener('error', function (e) {
+  // 画像などの読み込み失敗ではなく、スクリプトが止まったときだけ出す
+  if (!e || !e.message) return;
+  const file = String(e.filename || '').split('/').pop();
+  showFatal(e.message, file ? file + ' ' + e.lineno + '行目' : '');
+});
+
 /* ---------- 前回の数字を覚えておく ---------- */
 
 /* GAS の応答に 2 秒前後かかり、その間まっ白で待たされるのが長い。

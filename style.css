@@ -279,6 +279,7 @@ main {
 .busy::after {
   content: "";
   position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0; /* inset は Safari 14.1 より前にない */
   inset: 0;
   border-radius: var(--r);
   background: rgba(255, 255, 255, .55);
@@ -503,6 +504,7 @@ main {
   z-index: 40;
   display: flex;
   background: rgba(255, 255, 255, .96);
+  -webkit-backdrop-filter: saturate(150%) blur(8px); /* Safari は接頭辞が要る */
   backdrop-filter: saturate(150%) blur(8px);
   border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
@@ -630,6 +632,33 @@ body.no-tabbar .toasts { bottom: calc(12px + env(safe-area-inset-bottom)); }
   place-items: center;
   font-size: 17px;
   border-radius: 8px;
+}
+
+/* 落ちたときに原因を出す帯（普段は出ない） */
+.fatal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: var(--danger);
+  color: #fff;
+  padding: 12px 14px calc(12px + env(safe-area-inset-top));
+  padding-top: calc(12px + env(safe-area-inset-top));
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .25);
+}
+.fatal b { display: block; font-size: 14.5px; margin-bottom: 3px; }
+.fatal p { margin: 0 0 7px; color: rgba(255, 255, 255, .85); }
+.fatal code {
+  display: block;
+  background: rgba(0, 0, 0, .22);
+  border-radius: 7px;
+  padding: 7px 9px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ===== 管理画面 ===== */

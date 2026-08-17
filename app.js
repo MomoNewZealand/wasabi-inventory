@@ -372,7 +372,9 @@ function renderList(force) {
         sigs.set(r.item.row, cardSig(r.item, r.mode));
       }
     }
-    elList.replaceChildren(frag);
+    // replaceChildren は Safari 14 より前にないので使わない（古い iPhone で真っ白になる）
+    elList.innerHTML = '';
+    elList.appendChild(frag);
     renderedKey = key;
     return;
   }
