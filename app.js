@@ -16,6 +16,15 @@ const sigs = new Map(); // row → カードの内容のハッシュ代わり
 let lastLoadedAt = 0;
 let loading = false;
 
+/* 「届いた」を押したあと、入荷数を入れてもらう欄を開いている品目。
+   row → { loc, qty }。カードは中身が変わると描き直されるので、
+   開いているかどうかと入力中の数字はここに持たせておく */
+const receiving = new Map();
+
+/* 入荷数だけ保存できて、状態を「在庫あり」にするところで失敗した品目。
+   もう一度「届いた」を押したときに数量を二重に足さないための目印 */
+const receivedSaved = new Map();
+
 const elLocBar = document.getElementById('locbar');
 const elList = document.getElementById('list');
 const elTabbar = document.getElementById('tabbar');
@@ -182,6 +191,7 @@ function cardSig(it, mode) {
     it.servings, it.group, it.gTotal, it.gRp,
     it.qtyUpdated, it.updated,
     mode,
+    receiving.get(it.row) || null,
   ]);
 }
 
@@ -295,6 +305,67 @@ function qtyInner(it, mode) {
   return h;
 }
 
+/**
+ * 「届いた」を押したあとに開く、入荷数の入力欄。
+ * 数量で管理している品目だけに出る（receiving に入っている品目のみ）
+ */
+function receiveInner(it) {
+  const r = receiving.get(it.row);
+  if (!r) return '';
+  const unit = esc(it.qtyUnit || '');
+  const stepTxt = fmt(stepFor(it));
+
+  let h = '<div class="recv"><p class="recv-q">いくつ届きましたか？</p>';
+
+  h += '<div class="recv-locs">';
+  for (const l of LOCS) {
+    h +=
+      '<button type="button" class="recv-loc" data-act="rloc" data-loc="' + esc(l.key) +
+      '" aria-pressed="' + (r.loc === l.key) + '">' + esc(l.label) + '</button>';
+  }
+  h += '</div>';
+
+  h += '<div class="qty-row">';
+  h +=
+    '<button type="button" class="step dec" data-act="rdec" aria-label="入荷数を' +
+    esc(stepTxt) + '減らす">−' + stepTxt + '</button>';
+  h +=
+    '<input class="qty-input recv-input" type="number" step="any" min="0" inputmode="decimal"' +
+    ' enterkeyhint="done" value="' + esc(r.qty) + '" placeholder="0"' +
+    ' aria-label="' + esc(it.name + 'の入荷数') + '">';
+  h += '<span class="qty-unit">' + unit + '</span>';
+  h +=
+    '<button type="button" class="step inc" data-act="rinc" aria-label="入荷数を' +
+    esc(stepTxt) + '増やす">+' + stepTxt + '</button>';
+  h += '</div>';
+
+  h += '<p class="recv-preview">' + esc(recvPreview(it, r)) + '</p>';
+
+  h +=
+    '<div class="actions"><button type="button" class="btn out" data-act="rcancel">やめる</button>' +
+    '<button type="button" class="btn primary" data-act="rsave">入荷を登録</button></div>';
+  h +=
+    '<button type="button" class="recv-skip" data-act="rskip">' +
+    '数がわからない（数量はそのままで「在庫あり」にする）</button>';
+  h += '</div>';
+  return h;
+}
+
+/** 入荷欄の下に出す「登録すると 計◯◯」の一行 */
+function recvPreview(it, r) {
+  const add = num(r.qty);
+  if (add == null || add <= 0) return '';
+  const unit = it.qtyUnit || '';
+  const total = num(it.total);
+  if (total == null) return '＋' + fmt(add) + unit + ' 増やします';
+  const after = total + add;
+  const rp = num(it.rp);
+  let t = '登録すると 計' + fmt(after) + unit;
+  // グループのある品目は発注点をグループ側で見ているので、ここでは判定しない
+  if (!it.group && rp != null && after <= rp) t += '（まだ発注点' + fmt(rp) + unit + '以下です）';
+  return t;
+}
+
 function actionsInner(it, mode) {
   if (mode === 'stock') return ''; // 棚卸しは数を数えるだけ
   const st = STATUS[it.status];
@@ -313,7 +384,8 @@ function cardInner(it, mode) {
   h += metaInner(it, mode);
   // 要発注タブは残数を meta に出すので、増減の操作欄は出さない
   if (it.managed && mode !== 'reorder') h += qtyInner(it, mode);
-  h += actionsInner(it, mode);
+  if (receiving.has(it.row)) h += receiveInner(it);
+  else h += actionsInner(it, mode);
   return h;
 }
 
@@ -429,7 +501,7 @@ function applyData(data, replaceAll) {
    =========================================================== */
 
 /** 1 件ぶんの書き込み。カードを操作できなくして、終わったら結果を反映する */
-async function run(row, payload, onOk) {
+async function run(row, payload, onOk, opts) {
   const el = cardEl(row);
   setBusy(el, true);
   try {
@@ -442,7 +514,10 @@ async function run(row, payload, onOk) {
   } catch (err) {
     setBusy(cardEl(row), false);
     redrawCard(row); // 入力欄をサーバー側の値に戻す
-    toast(err.message || '保存できませんでした', { type: 'error', timeout: 7000 });
+    // 続けてもう 1 通送る操作では、呼んだ側でまとめて知らせるので黙っておく
+    if (!(opts && opts.quiet)) {
+      toast(err.message || '保存できませんでした', { type: 'error', timeout: 7000 });
+    }
     return false;
   }
 }
@@ -466,12 +541,31 @@ async function refreshGroup(item) {
 async function doStatus(it) {
   const st = STATUS[it.status];
   if (!st) return;
+
+  // 「届いた」だけは、届いた数量を先に入れてもらう。
+  // 数を入れずに「在庫あり」に戻すと残数が発注点以下のままなので、
+  // すぐにまた「要発注」に戻ってしまう。
+  // 入荷数だけ先に保存できている品目（receivedSaved）は、
+  // もう一度数を足さないよう、そのまま状態だけ変える
+  if (it.status === '発注済み' && it.managed && !receivedSaved.has(it.row)) {
+    openReceive(it);
+    return;
+  }
+
+  await changeStatus(it);
+}
+
+/** 状態を次に進めるだけ（入荷数の入力をはさまない従来どおりの動き） */
+async function changeStatus(it) {
+  const st = STATUS[it.status];
+  if (!st) return;
   const from = it.status;
   const to = st.next;
   const row = it.row;
   const name = it.name;
 
   await run(row, { action: 'setStatus', row, status: to, isUndo: false }, () => {
+    receivedSaved.delete(row);
     toast('「' + name + '」を「' + to + '」にしました', {
       timeout: 15000,
       action: {
@@ -485,6 +579,99 @@ async function doStatus(it) {
 async function undoStatus(row, to, name) {
   await run(row, { action: 'setStatus', row, status: to, isUndo: true }, () => {
     toast('「' + name + '」を「' + to + '」に戻しました');
+  });
+}
+
+/* ---------- 入荷（「届いた」） ---------- */
+
+function openReceive(it) {
+  receiving.set(it.row, { loc: state.loc, qty: '' });
+  redrawCard(it.row);
+  const el = cardEl(it.row);
+  const input = el && el.querySelector('.recv-input');
+  if (input) input.focus();
+}
+
+function closeReceive(row) {
+  receiving.delete(row);
+  redrawCard(row);
+}
+
+/** 入荷を入れる場所（倉庫 / 牽引 / 自走）を選び直す */
+function setRecvLoc(it, loc) {
+  const r = receiving.get(it.row);
+  if (!r || r.loc === loc) return;
+  r.loc = loc;
+  redrawCard(it.row);
+}
+
+/** 入荷欄の −◯◯ / +◯◯ */
+function bumpRecv(it, delta) {
+  const r = receiving.get(it.row);
+  if (!r) return;
+  const cur = num(r.qty) || 0;
+  const next = Math.round((cur + delta) * 100) / 100;
+  r.qty = next <= 0 ? '' : String(next);
+  redrawCard(it.row);
+}
+
+/**
+ * 入荷の登録。数量を足してから状態を「在庫あり」にする（2 通に分けて送る）。
+ * 1 通目が失敗したときは何も変わっていないので、入力欄はそのまま残す
+ */
+async function doReceive(it) {
+  const r = receiving.get(it.row);
+  if (!r) return;
+  const row = it.row;
+  const name = it.name;
+  const loc = r.loc;
+  const qty = num(r.qty);
+
+  if (qty == null || qty <= 0) {
+    toast('届いた数量を入れてください', { type: 'error' });
+    return;
+  }
+
+  if (!(await run(row, { action: 'adjustQty', row, loc, delta: qty }))) return;
+
+  // ここから先で失敗しても数量はもう入っている。二重に足さないよう目印を残す
+  receivedSaved.set(row, true);
+  // 入荷欄はここで閉じる。状態の変更で失敗しても「届いた」ボタンに戻るだけで、
+  // 目印が残っているので数量をもう一度足してしまうことはない
+  receiving.delete(row);
+  redrawCard(row);
+
+  const ok = await run(row, { action: 'setStatus', row, status: '在庫あり', isUndo: false }, null, {
+    quiet: true,
+  });
+  if (!ok) {
+    toast(
+      '数量は入りましたが、状態を「在庫あり」にできませんでした。' +
+        'もう一度「届いた」を押してください（数量はもう入れなくて大丈夫です）',
+      { type: 'error', timeout: 9000 }
+    );
+    return;
+  }
+
+  receivedSaved.delete(row);
+  const after = getItem(row);
+  const unit = it.qtyUnit || '';
+  toast(
+    '「' + name + '」に ' + fmt(qty) + unit + ' 入荷しました（' + LOC_NAME[loc] + '）。計' +
+      fmt(after ? num(after.total) : null) + unit,
+    {
+      timeout: 15000,
+      action: { label: '元に戻す', onClick: () => undoReceive(row, loc, qty, name) },
+    }
+  );
+  refreshGroup(it);
+}
+
+/** 入荷の取り消し。足した数を引いてから「発注済み」に戻す */
+async function undoReceive(row, loc, qty, name) {
+  if (!(await run(row, { action: 'adjustQty', row, loc, delta: -qty }))) return;
+  await run(row, { action: 'setStatus', row, status: '発注済み', isUndo: true }, () => {
+    toast('「' + name + '」の入荷を取り消しました');
   });
 }
 
@@ -556,16 +743,40 @@ elList.addEventListener('click', (e) => {
   if (b.dataset.act === 'status') doStatus(it);
   else if (b.dataset.act === 'inc') doAdjust(it, stepFor(it));
   else if (b.dataset.act === 'dec') doAdjust(it, -stepFor(it));
+  else if (b.dataset.act === 'rloc') setRecvLoc(it, b.dataset.loc);
+  else if (b.dataset.act === 'rinc') bumpRecv(it, stepFor(it));
+  else if (b.dataset.act === 'rdec') bumpRecv(it, -stepFor(it));
+  else if (b.dataset.act === 'rsave') doReceive(it);
+  else if (b.dataset.act === 'rcancel') closeReceive(it.row);
+  else if (b.dataset.act === 'rskip') {
+    closeReceive(it.row);
+    changeStatus(it);
+  }
 });
 
 elList.addEventListener('change', (e) => {
   if (state.stale) return; // 前回の数字が出ているあいだは触らせない
   const input = e.target.closest('input.qty-input');
-  if (!input) return;
+  if (!input || input.classList.contains('recv-input')) return; // 入荷欄はここでは保存しない
   const card = input.closest('.card');
   if (!card) return;
   const it = getItem(Number(card.dataset.row));
   if (it) doSetQty(it, input);
+});
+
+// 入荷数は打つたびに覚えておく（読み込みが走ってカードが描き直されても消えないように）。
+// 画面はプレビューの一行だけ書き換える（丸ごと描き直すと入力中の欄から指が外れてしまう）
+elList.addEventListener('input', (e) => {
+  const input = e.target.closest('input.recv-input');
+  if (!input) return;
+  const card = input.closest('.card');
+  if (!card) return;
+  const it = getItem(Number(card.dataset.row));
+  const r = it && receiving.get(it.row);
+  if (!r) return;
+  r.qty = input.value;
+  const prev = card.querySelector('.recv-preview');
+  if (prev) prev.textContent = recvPreview(it, r);
 });
 
 // Enter で確定してキーボードを閉じる

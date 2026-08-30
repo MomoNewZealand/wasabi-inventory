@@ -494,6 +494,66 @@ main {
 .btn.primary { background: var(--green); border-color: var(--green); color: #fff; }
 .btn:disabled { opacity: .5; }
 
+/* ===== 入荷（「届いた」を押したあとに開く欄） ===== */
+
+.recv {
+  margin-top: 11px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.recv-q {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink-2);
+  margin-bottom: 8px;
+}
+
+.recv-locs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.recv-loc {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink-2);
+  border-radius: 999px;
+  padding: 6px 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  min-height: 36px;
+}
+.recv-loc[aria-pressed="true"] {
+  background: var(--green-l);
+  border-color: #cfdfd4;
+  color: var(--green);
+}
+
+.recv-preview {
+  min-height: 18px;
+  margin-top: 7px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.recv .actions { margin-top: 9px; }
+
+.recv-skip {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 0;
+  border: 0;
+  background: none;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  text-decoration: underline;
+}
+
 /* ===== 下部タブバー ===== */
 
 .tabbar {
