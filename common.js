@@ -61,15 +61,17 @@ function lineLabel(line) {
 
 /**
  * −1 / +1 の刻みを決める。
- * 1. lot に値があればそれを使う（袋やケース単位でしか動かない容器類）
- * 2. なければ kg・L 系は 0.5 刻み
- * 3. それ以外は 1
+ * 1. lot に値があればそれを使う（袋やケース単位でしか動かない品目）
+ * 2. なければ 1
+ *
+ * 以前は「単位が kg・L なら 0.5 刻み」という決めうちも入れていたが、やめた。
+ * lot という決める場所ができたあとでは、こちらが勝手に決めた数が出るだけで
+ * 「5 にしたはずなのに 0.5 になる」という混乱のもとになるため。
+ * 0.5 刻みにしたい品目は、lot に 0.5 と入れれば同じことができる。
  */
 function stepFor(item) {
   const lot = num(item && item.lot);
   if (lot != null && lot > 0) return lot;
-  const u = String((item && item.qtyUnit) || '').trim().toLowerCase();
-  if (/^(kg|ｋｇ|キロ|キログラム|l|ℓ|ｌ|リットル|升)$/.test(u)) return 0.5;
   return 1;
 }
 
