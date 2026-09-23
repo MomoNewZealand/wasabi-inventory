@@ -372,10 +372,19 @@ function actionsInner(it, mode) {
   if (!st) return '';
   // 分類タブでは、数量管理していて在庫がある品目は −1/+1 で回すのでボタンを出さない
   if (mode === 'line' && it.managed && it.status === '在庫あり') return '';
-  return (
-    '<div class="actions"><button type="button" class="btn ' + st.btn +
-    '" data-act="status">' + esc(st.action) + '</button></div>'
-  );
+
+  let h = '<div class="actions">';
+  h += '<button type="button" class="btn ' + st.btn + '" data-act="status">' + esc(st.action) + '</button>';
+  // ステータスは一方通行で回るので、押し間違えたときや発注点をなくしたときに
+  // 「していない発注」を記録せずに戻せるようにしておく。
+  // 発注済みには出さない。あちらは「届いた」から入荷数を入れる流れがあり、
+  // そこを飛ばして在庫ありにすると残数が足りないままになってしまう
+  // （数がわからないときは、その流れの中の「数がわからない」を使う）
+  if (it.status === '要発注') {
+    h += '<button type="button" class="btn out btn-narrow" data-act="reset">在庫あり</button>';
+  }
+  h += '</div>';
+  return h;
 }
 
 function cardInner(it, mode) {
@@ -576,6 +585,34 @@ async function changeStatus(it) {
   });
 }
 
+/** 「要発注」を、発注を記録せずに「在庫あり」へ戻す */
+async function doReset(it) {
+  const from = it.status;
+  const row = it.row;
+  const name = it.name;
+
+  // 残数が発注点以下のままだと、次に数を動かしたときにまた要発注に戻る。
+  // 戻ってきてから悩まないよう、押した時点で断っておく
+  const rp = num(it.rp);
+  const total = num(it.total);
+  const 戻る = it.managed && !it.group && rp != null && total != null && total <= rp;
+
+  await run(row, { action: 'setStatus', row, status: '在庫あり', isUndo: false }, () => {
+    receivedSaved.delete(row);
+    toast(
+      '「' + name + '」を「在庫あり」に戻しました' +
+        (戻る ? '（残数が発注点以下なので、数を入れ直すとまた要発注になります）' : ''),
+      {
+        timeout: 15000,
+        action: {
+          label: '元に戻す',
+          onClick: () => undoStatus(row, from, name),
+        },
+      }
+    );
+  });
+}
+
 async function undoStatus(row, to, name) {
   await run(row, { action: 'setStatus', row, status: to, isUndo: true }, () => {
     toast('「' + name + '」を「' + to + '」に戻しました');
@@ -741,6 +778,7 @@ elList.addEventListener('click', (e) => {
   if (!it) return;
 
   if (b.dataset.act === 'status') doStatus(it);
+  else if (b.dataset.act === 'reset') doReset(it);
   else if (b.dataset.act === 'inc') doAdjust(it, stepFor(it));
   else if (b.dataset.act === 'dec') doAdjust(it, -stepFor(it));
   else if (b.dataset.act === 'rloc') setRecvLoc(it, b.dataset.loc);
