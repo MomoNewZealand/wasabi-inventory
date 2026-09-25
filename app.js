@@ -9,7 +9,17 @@ const state = {
   tab: 'reorder',
   loc: 'soko',
   stale: false, // 前回の数字を出していて、まだ最新に入れ替わっていない
+  moveMode: false, // 棚卸しタブを「移す」モードにしているか
+  mvFrom: 'soko', // 移動元
+  mvTo: 'ken', // 移動先
 };
+
+/* 「移す」モードで、品目ごとに入れている「移す数」。row → 文字列。
+   カードは描き直されるので、入力中の数字はここに持たせておく */
+const moving = new Map();
+
+/* 移動の途中（2 通送っている最中）の品目。二度押しを防ぐ */
+const movingNow = new Set();
 
 let renderedKey = ''; // いま画面に並んでいるカードの並び順（変わったときだけ組み直す）
 const sigs = new Map(); // row → カードの内容のハッシュ代わり
@@ -26,6 +36,8 @@ const receiving = new Map();
 const receivedSaved = new Map();
 
 const elLocBar = document.getElementById('locbar');
+const elModeBar = document.getElementById('modebar');
+const elMoveBar = document.getElementById('movebar');
 const elList = document.getElementById('list');
 const elTabbar = document.getElementById('tabbar');
 const elReload = document.getElementById('reload');
@@ -79,14 +91,22 @@ function selectTab(id) {
   elTabbar.querySelectorAll('.tab').forEach((b) => {
     b.setAttribute('aria-selected', String(b.dataset.tab === id));
   });
-  syncLocBar();
+  syncBars();
   renderList(true);
   window.scrollTo({ top: 0 });
 }
 
-/** 要発注タブは拠点ごとの操作がないので、場所の切り替えは隠す */
-function syncLocBar() {
-  elLocBar.hidden = state.tab === 'reorder';
+/**
+ * 画面上部に出すものをタブごとに切り替える。
+ *   要発注 … 何も出さない（拠点ごとの操作がないため）
+ *   分類   … 場所の切り替え
+ *   棚卸し … 「数える / 移す」の切り替え＋（数えるなら場所、移すなら元→先）
+ */
+function syncBars() {
+  const stock = state.tab === 'stock';
+  elModeBar.hidden = !stock;
+  elMoveBar.hidden = !(stock && state.moveMode);
+  elLocBar.hidden = state.tab === 'reorder' || (stock && state.moveMode);
 }
 
 /* ===========================================================
@@ -114,6 +134,55 @@ function selectLoc(key) {
   elLocBar.querySelectorAll('.loc').forEach((b) => {
     b.setAttribute('aria-pressed', String(b.dataset.loc === key));
   });
+  renderList(true);
+}
+
+/* ===========================================================
+   棚卸しタブの「数える / 移す」
+   =========================================================== */
+
+function renderModeBar() {
+  elModeBar.innerHTML =
+    '<button type="button" class="mode" data-mode="count" aria-pressed="' + !state.moveMode +
+    '">数える</button>' +
+    '<button type="button" class="mode" data-mode="move" aria-pressed="' + state.moveMode +
+    '">移す</button>';
+}
+
+function renderMoveBar() {
+  const row = (label, sel, act) =>
+    '<div class="mv-row"><span class="loc-label">' + label + '</span>' +
+    LOCS.map(
+      (l) =>
+        '<button type="button" class="loc" data-act="' + act + '" data-loc="' + l.key +
+        '" aria-pressed="' + (l.key === sel) + '">' + esc(l.label) + '</button>'
+    ).join('') +
+    '</div>';
+  elMoveBar.innerHTML = row('元', state.mvFrom, 'mvfrom') + row('先', state.mvTo, 'mvto');
+}
+
+function setMoveMode(on) {
+  if (state.moveMode === on) return;
+  state.moveMode = on;
+  moving.clear(); // 入れかけの数は持ち越さない
+  renderModeBar();
+  syncBars();
+  renderList(true);
+  window.scrollTo({ top: 0 });
+}
+
+/** 移動元・移動先を選ぶ。同じ場所を選んだら入れ替える */
+function setMoveLoc(which, key) {
+  if (which === 'from') {
+    if (state.mvFrom === key) return;
+    if (state.mvTo === key) state.mvTo = state.mvFrom;
+    state.mvFrom = key;
+  } else {
+    if (state.mvTo === key) return;
+    if (state.mvFrom === key) state.mvFrom = state.mvTo;
+    state.mvTo = key;
+  }
+  renderMoveBar();
   renderList(true);
 }
 
@@ -163,7 +232,7 @@ function buildRows() {
         cur = i.line;
         out.push({ type: 'section', label: lineLabel(cur) });
       }
-      out.push({ type: 'card', item: i, mode: 'stock' });
+      out.push({ type: 'card', item: i, mode: state.moveMode ? 'move' : 'stock' });
     }
     return out;
   }
@@ -366,8 +435,66 @@ function recvPreview(it, r) {
   return t;
 }
 
+/**
+ * 「移す」モードのカード。倉庫 → 牽引 のように場所を移した数を入れる。
+ * 移動元・移動先は画面上部で選んであるので、ここでは数だけ入れればよい
+ */
+function moveInner(it) {
+  const from = state.mvFrom;
+  const to = state.mvTo;
+  const fromV = num(it[from]);
+  const toV = num(it[to]);
+  const stepTxt = fmt(stepFor(it));
+  const unit = esc(it.qtyUnit || '');
+  const q = moving.get(it.row) || '';
+
+  let h = '<div class="qty"><div class="breakdown">';
+  h += '<span class="bd on"><b>' + esc(LOC_NAME[from]) + '</b>' + fmt(fromV) + '</span>';
+  h += '<span class="bd"><b>' + esc(LOC_NAME[to]) + '</b>' + fmt(toV) + '</span>';
+  h += '<span class="bd total"><b>計</b>' + fmt(num(it.total)) + unit + '</span>';
+  h += '</div>';
+
+  h += '<div class="qty-row">';
+  h +=
+    '<button type="button" class="step dec" data-act="mdec" aria-label="移す数を' +
+    esc(stepTxt) + '減らす">−' + stepTxt + '</button>';
+  h +=
+    '<input class="qty-input mv-input" type="number" step="any" min="0" inputmode="decimal"' +
+    ' enterkeyhint="done" value="' + esc(q) + '" placeholder="0"' +
+    ' aria-label="' + esc(it.name + 'を移す数') + '">';
+  h += '<span class="qty-unit">' + unit + '</span>';
+  h +=
+    '<button type="button" class="step inc" data-act="minc" aria-label="移す数を' +
+    esc(stepTxt) + '増やす">+' + stepTxt + '</button>';
+  h += '</div>';
+
+  h +=
+    '<div class="mv-foot"><p class="mv-preview">' + esc(movePreview(it)) + '</p>' +
+    '<button type="button" class="btn primary mv-go" data-act="msave">移す</button></div>';
+  h += '</div>';
+  return h;
+}
+
+/** 「倉庫 300 → 275 ／ 牽引 50 → 75」の一行 */
+function movePreview(it) {
+  const qty = num(moving.get(it.row));
+  const from = state.mvFrom;
+  const to = state.mvTo;
+  const unit = it.qtyUnit || '';
+  if (qty == null || qty <= 0) return LOC_NAME[from] + ' から ' + LOC_NAME[to] + ' へ';
+
+  const fromV = num(it[from]);
+  const toV = num(it[to]);
+  if (fromV == null) return LOC_NAME[from] + 'に残数が入っていません';
+  if (qty > fromV) return LOC_NAME[from] + 'には ' + fmt(fromV) + unit + ' しかありません';
+  return (
+    LOC_NAME[from] + ' ' + fmt(fromV) + '→' + fmt(fromV - qty) + '　' +
+    LOC_NAME[to] + ' ' + fmt(toV == null ? 0 : toV) + '→' + fmt((toV == null ? 0 : toV) + qty)
+  );
+}
+
 function actionsInner(it, mode) {
-  if (mode === 'stock') return ''; // 棚卸しは数を数えるだけ
+  if (mode === 'stock' || mode === 'move') return ''; // 棚卸しは数を数えるだけ
   const st = STATUS[it.status];
   if (!st) return '';
   // 分類タブでは、数量管理していて在庫がある品目は −1/+1 で回すのでボタンを出さない
@@ -390,6 +517,7 @@ function actionsInner(it, mode) {
 function cardInner(it, mode) {
   let h = '<span class="card-spin spinner"></span>';
   h += headInner(it);
+  if (mode === 'move') return h + moveInner(it);
   h += metaInner(it, mode);
   // 要発注タブは残数を meta に出すので、増減の操作欄は出さない
   if (it.managed && mode !== 'reorder') h += qtyInner(it, mode);
@@ -712,6 +840,111 @@ async function undoReceive(row, loc, qty, name) {
   });
 }
 
+/* ---------- 移動（棚卸しタブの「移す」） ---------- */
+
+/** 移す数の −◯◯ / +◯◯ */
+function bumpMove(it, delta) {
+  const cur = num(moving.get(it.row)) || 0;
+  const next = Math.round((cur + delta) * 100) / 100;
+  if (next <= 0) moving.delete(it.row);
+  else moving.set(it.row, String(next));
+  redrawCard(it.row);
+}
+
+/**
+ * 場所を移す本体。API に「移動」はないので、
+ * 「移動元から引く」「移動先に足す」の 2 通に分けて送る。
+ * 途中で失敗すると資材が消えたように見えるので、必ず元に戻す。
+ * 戻り値: 'ok' /  'none'（1通目で失敗、何も変わっていない）
+ *        / 'back'（2通目で失敗したが元に戻した） / 'broken'（戻すのも失敗）
+ */
+async function transfer(row, from, to, qty) {
+  if (!(await run(row, { action: 'adjustQty', row, loc: from, delta: -qty }, null, { quiet: true }))) {
+    return 'none';
+  }
+  if (await run(row, { action: 'adjustQty', row, loc: to, delta: qty }, null, { quiet: true })) {
+    return 'ok';
+  }
+  const back = await run(row, { action: 'adjustQty', row, loc: from, delta: qty }, null, { quiet: true });
+  return back ? 'back' : 'broken';
+}
+
+/** 失敗したときの知らせ方をまとめる */
+function reportTransfer(result, from, name, qty, unit) {
+  if (result === 'none') {
+    toast('移せませんでした。数字は変わっていません', { type: 'error', timeout: 8000 });
+  } else if (result === 'back') {
+    toast('移せませんでした。数字は元に戻してあります', { type: 'error', timeout: 9000 });
+  } else if (result === 'broken') {
+    // ここだけは手で直してもらうしかないので、何をすればよいかまで書く
+    toast(
+      '移動の途中で失敗し、元に戻すこともできませんでした。' +
+        '「' + name + '」の' + LOC_NAME[from] + 'を ' + fmt(qty) + unit + ' 増やして直してください',
+      { type: 'error', timeout: 30000 }
+    );
+  }
+}
+
+async function doMove(it) {
+  const row = it.row;
+  if (movingNow.has(row)) return; // 二度押し防止
+  const from = state.mvFrom;
+  const to = state.mvTo;
+  const unit = it.qtyUnit || '';
+  const name = it.name;
+
+  const qty = num(moving.get(row));
+  if (qty == null || qty <= 0) {
+    toast('移す数を入れてください', { type: 'error' });
+    return;
+  }
+  const fromV = num(it[from]);
+  if (fromV == null) {
+    toast('「' + name + '」は' + LOC_NAME[from] + 'に残数が入っていません', { type: 'error', timeout: 7000 });
+    return;
+  }
+  if (qty > fromV) {
+    toast(LOC_NAME[from] + 'には「' + name + '」が ' + fmt(fromV) + unit + ' しかありません', {
+      type: 'error',
+      timeout: 7000,
+    });
+    return;
+  }
+
+  movingNow.add(row);
+  let result;
+  try {
+    result = await transfer(row, from, to, qty);
+  } finally {
+    movingNow.delete(row);
+  }
+
+  if (result !== 'ok') {
+    reportTransfer(result, from, name, qty, unit);
+    return;
+  }
+
+  moving.delete(row);
+  redrawCard(row);
+  toast(
+    '「' + name + '」を ' + LOC_NAME[from] + '→' + LOC_NAME[to] + ' に ' + fmt(qty) + unit + ' 移しました',
+    {
+      timeout: 15000,
+      action: { label: '元に戻す', onClick: () => undoMove(row, from, to, qty, name, unit) },
+    }
+  );
+}
+
+/** 移動の取り消し。逆向きに移し直す */
+async function undoMove(row, from, to, qty, name, unit) {
+  const result = await transfer(row, to, from, qty);
+  if (result === 'ok') {
+    toast('「' + name + '」の移動を取り消しました');
+  } else {
+    reportTransfer(result, to, name, qty, unit);
+  }
+}
+
 async function doAdjust(it, delta) {
   const cur = num(it[state.loc]);
   if (cur == null && delta < 0) {
@@ -790,12 +1023,27 @@ elList.addEventListener('click', (e) => {
     closeReceive(it.row);
     changeStatus(it);
   }
+  else if (b.dataset.act === 'minc') bumpMove(it, stepFor(it));
+  else if (b.dataset.act === 'mdec') bumpMove(it, -stepFor(it));
+  else if (b.dataset.act === 'msave') doMove(it);
+});
+
+elModeBar.addEventListener('click', (e) => {
+  const b = e.target.closest('.mode');
+  if (b) setMoveMode(b.dataset.mode === 'move');
+});
+
+elMoveBar.addEventListener('click', (e) => {
+  const b = e.target.closest('.loc');
+  if (!b) return;
+  setMoveLoc(b.dataset.act === 'mvfrom' ? 'from' : 'to', b.dataset.loc);
 });
 
 elList.addEventListener('change', (e) => {
   if (state.stale) return; // 前回の数字が出ているあいだは触らせない
   const input = e.target.closest('input.qty-input');
-  if (!input || input.classList.contains('recv-input')) return; // 入荷欄はここでは保存しない
+  // 入荷欄と移動欄は「残数そのもの」ではないので、ここで保存してはいけない
+  if (!input || input.classList.contains('recv-input') || input.classList.contains('mv-input')) return;
   const card = input.closest('.card');
   if (!card) return;
   const it = getItem(Number(card.dataset.row));
@@ -815,6 +1063,20 @@ elList.addEventListener('input', (e) => {
   r.qty = input.value;
   const prev = card.querySelector('.recv-preview');
   if (prev) prev.textContent = recvPreview(it, r);
+});
+
+// 移す数も同じように、打つたびに覚えてプレビューの一行だけ書き換える
+elList.addEventListener('input', (e) => {
+  const input = e.target.closest('input.mv-input');
+  if (!input) return;
+  const card = input.closest('.card');
+  if (!card) return;
+  const it = getItem(Number(card.dataset.row));
+  if (!it) return;
+  if (String(input.value).trim() === '') moving.delete(it.row);
+  else moving.set(it.row, input.value);
+  const prev = card.querySelector('.mv-preview');
+  if (prev) prev.textContent = movePreview(it);
 });
 
 // Enter で確定してキーボードを閉じる
@@ -917,8 +1179,10 @@ async function load(showSpinner) {
 /* 起動 */
 elReload.innerHTML = icon('refresh');
 renderLocBar();
+renderModeBar();
+renderMoveBar();
 renderTabs();
-syncLocBar();
+syncBars();
 
 if (bootCache) {
   // 前回の数字をすぐ出す。最新に入れ替わるまでは断りを出し、数は触らせない

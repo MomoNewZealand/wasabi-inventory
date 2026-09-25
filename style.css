@@ -119,6 +119,46 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 
 .loc-bar[hidden] { display: none; }
 
+/* 棚卸しタブの「数える / 移す」 */
+.mode-bar {
+  max-width: 820px;
+  margin: 0 auto;
+  display: flex;
+  gap: 4px;
+  padding-bottom: 10px;
+}
+.mode-bar[hidden] { display: none; }
+
+.mode {
+  border: 1px solid rgba(255, 255, 255, .32);
+  background: transparent;
+  color: rgba(255, 255, 255, .88);
+  border-radius: 999px;
+  padding: 5px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  min-height: 32px;
+}
+.mode[aria-pressed="true"] {
+  background: #fff;
+  color: var(--green);
+  border-color: #fff;
+}
+
+/* 移動元 → 移動先 */
+.move-bar { padding-bottom: 4px; }
+.move-bar[hidden] { display: none; }
+
+.mv-row {
+  max-width: 820px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+}
+.mv-row .loc-label { min-width: 1.6em; }
+
 .loc-bar .loc-label {
   font-size: 12px;
   color: rgba(255, 255, 255, .75);
@@ -493,6 +533,30 @@ main {
 .btn.warn { background: var(--warn); border-color: var(--warn); color: #fff; }
 .btn.primary { background: var(--green); border-color: var(--green); color: #fff; }
 .btn:disabled { opacity: .5; }
+
+/* 「移す」モードのカード下部。プレビューと移すボタンを同じ行に置く */
+.mv-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.mv-preview {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.mv-go {
+  flex: none;
+  min-width: 76px;
+  min-height: 42px;
+  font-size: 14.5px;
+}
 
 /* 主ボタンの横に添える小さいほう（「在庫あり」に戻す）。
    同じ行に置くのでカードの高さは変わらない */
