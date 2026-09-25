@@ -558,6 +558,17 @@ main {
   font-size: 14.5px;
 }
 
+/* 順番待ち・移動中の行。入力欄のぶん縮むので高さを合わせておく */
+.mv-wait {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  color: var(--green);
+  font-weight: 600;
+}
+.mv-wait .spinner { width: 15px; height: 15px; border-width: 2px; }
+
 /* 主ボタンの横に添える小さいほう（「在庫あり」に戻す）。
    同じ行に置くのでカードの高さは変わらない */
 .btn-narrow {

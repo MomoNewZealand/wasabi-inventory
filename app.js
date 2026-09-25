@@ -18,8 +18,13 @@ const state = {
    カードは描き直されるので、入力中の数字はここに持たせておく */
 const moving = new Map();
 
-/* 移動の途中（2 通送っている最中）の品目。二度押しを防ぐ */
-const movingNow = new Set();
+/* 順番待ち・移動中の品目。row → { from, to, qty }。
+   「移す」を押したらすぐここに入れて次の品目へ進めるようにし、
+   通信は裏で 1 件ずつ片づける（1 件 4 秒かかるので、待たせない） */
+const moveQueue = new Map();
+
+/* 移動を 1 件ずつ順番に送るための鎖。まとめて押しても順番に片づく */
+let moveChain = Promise.resolve();
 
 let renderedKey = ''; // いま画面に並んでいるカードの並び順（変わったときだけ組み直す）
 const sigs = new Map(); // row → カードの内容のハッシュ代わり
@@ -454,6 +459,16 @@ function moveInner(it) {
   h += '<span class="bd total"><b>計</b>' + fmt(num(it.total)) + unit + '</span>';
   h += '</div>';
 
+  // 順番待ち・移動中のあいだは入力欄を出さない（二重に移さないため）
+  const job = moveQueue.get(it.row);
+  if (job) {
+    h +=
+      '<div class="mv-foot"><p class="mv-preview mv-wait"><span class="spinner"></span>' +
+      esc(LOC_NAME[job.from] + '→' + LOC_NAME[job.to] + ' に ' + fmt(job.qty) + (it.qtyUnit || '') + ' 移しています…') +
+      '</p></div></div>';
+    return h;
+  }
+
   h += '<div class="qty-row">';
   h +=
     '<button type="button" class="step dec" data-act="mdec" aria-label="移す数を' +
@@ -885,13 +900,22 @@ function reportTransfer(result, from, name, qty, unit) {
   }
 }
 
-async function doMove(it) {
+/**
+ * 「移す」を押したときの入口。
+ * ここでは中身を確かめて順番待ちに入れるだけで、通信は待たない。
+ * 押した人はすぐ次の品目に進める
+ */
+function doMove(it) {
   const row = it.row;
-  if (movingNow.has(row)) return; // 二度押し防止
   const from = state.mvFrom;
   const to = state.mvTo;
   const unit = it.qtyUnit || '';
   const name = it.name;
+
+  if (moveQueue.has(row)) {
+    toast('「' + name + '」はいま移動中です。終わるまで待ってください', { type: 'error' });
+    return;
+  }
 
   const qty = num(moving.get(row));
   if (qty == null || qty <= 0) {
@@ -911,25 +935,35 @@ async function doMove(it) {
     return;
   }
 
-  movingNow.add(row);
-  let result;
-  try {
-    result = await transfer(row, from, to, qty);
-  } finally {
-    movingNow.delete(row);
-  }
+  // 順番待ちに入れて、入力欄は空にする。ここから先は裏で進む
+  moveQueue.set(row, { from, to, qty, name, unit });
+  moving.delete(row);
+  redrawCard(row);
+  moveChain = moveChain.then(() => runMove(row), () => runMove(row));
+}
+
+/** 順番が回ってきた 1 件を実際に送る */
+async function runMove(row) {
+  const job = moveQueue.get(row);
+  if (!job) return;
+  const { from, to, qty, name, unit } = job;
+
+  const result = await transfer(row, from, to, qty);
+
+  moveQueue.delete(row);
+  redrawCard(row);
 
   if (result !== 'ok') {
     reportTransfer(result, from, name, qty, unit);
     return;
   }
 
-  moving.delete(row);
-  redrawCard(row);
+  flash(cardEl(row));
   toast(
     '「' + name + '」を ' + LOC_NAME[from] + '→' + LOC_NAME[to] + ' に ' + fmt(qty) + unit + ' 移しました',
     {
-      timeout: 15000,
+      // まとめて移すと通知が積み上がるので、1件ずつのときより短めにする
+      timeout: 8000,
       action: { label: '元に戻す', onClick: () => undoMove(row, from, to, qty, name, unit) },
     }
   );
