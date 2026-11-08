@@ -512,8 +512,12 @@ function actionsInner(it, mode) {
   if (mode === 'stock' || mode === 'move') return ''; // 棚卸しは数を数えるだけ
   const st = STATUS[it.status];
   if (!st) return '';
-  // 分類タブでは、数量管理していて在庫がある品目は −1/+1 で回すのでボタンを出さない
-  if (mode === 'line' && it.managed && it.status === '在庫あり') return '';
+  // 分類タブでは、数量管理していて在庫がある品目は −1/+1 で回すのでボタンを出さない。
+  // ただし発注点が空欄の品目は、残数が減っても自動では「要発注」にならないので、
+  // 衛生用品と同じく「なくなった」ボタンを出して手で要発注にできるようにする
+  // （グループのある品目は発注点をグループ側で見ているので、従来どおり出さない）
+  if (mode === 'line' && it.managed && it.status === '在庫あり' &&
+      (it.group || num(it.rp) != null)) return '';
 
   let h = '<div class="actions">';
   h += '<button type="button" class="btn ' + st.btn + '" data-act="status">' + esc(st.action) + '</button>';
